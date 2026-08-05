@@ -1,8 +1,8 @@
 import React, { useState, useEffect } from 'react';
-import { Save, Store, FileText } from 'lucide-react';
+import { Save, Store, FileText, Play } from 'lucide-react';
 import { api } from '../api/client';
 
-export default function SettingsPage({ showToast = () => {} }) {
+export default function SettingsPage({ showToast = () => {}, onReplayIntro = () => {} }) {
   const [settings, setSettings] = useState({
     name: '',
     logo_url: '',
@@ -62,6 +62,13 @@ export default function SettingsPage({ showToast = () => {} }) {
           <h1 className="page-title">Shop Settings & PDF Config</h1>
           <p className="page-subtitle">Configure business letterhead, GSTIN, default tax rates, and PDF terms & conditions</p>
         </div>
+        <button
+          className="btn btn-secondary"
+          onClick={onReplayIntro}
+          title="Replay 3D PC Build Intro Animation"
+        >
+          <Play size={16} color="var(--primary)" /> Play 3D Intro
+        </button>
       </div>
 
       <form onSubmit={handleSubmit}>

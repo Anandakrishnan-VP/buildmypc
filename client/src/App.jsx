@@ -9,6 +9,7 @@ import QuotationListPage from './pages/QuotationListPage';
 import SettingsPage from './pages/SettingsPage';
 import ToastContainer from './components/ToastContainer';
 import ConfirmModal from './components/ConfirmModal';
+import Opening3DScreen from './components/Opening3DScreen';
 import { api } from './api/client';
 
 export default function App() {
@@ -19,6 +20,16 @@ export default function App() {
   const [productsCount, setProductsCount] = useState(0);
   const [editingQuoteId, setEditingQuoteId] = useState(null);
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
+
+  // 3D Opening Screen State
+  const [show3DIntro, setShow3DIntro] = useState(() => {
+    return !sessionStorage.getItem('zeus_intro_seen');
+  });
+
+  const handleIntroComplete = () => {
+    sessionStorage.setItem('zeus_intro_seen', 'true');
+    setShow3DIntro(false);
+  };
 
   // Custom Toast Notifications
   const [toasts, setToasts] = useState([]);
@@ -98,6 +109,10 @@ export default function App() {
 
   return (
     <div className="app-container">
+      {show3DIntro && (
+        <Opening3DScreen onComplete={handleIntroComplete} />
+      )}
+
       <ToastContainer toasts={toasts} onRemove={removeToast} />
       <ConfirmModal
         isOpen={confirmState.isOpen}
@@ -185,6 +200,7 @@ export default function App() {
         {activePage === 'settings' && (
           <SettingsPage
             showToast={showToast}
+            onReplayIntro={() => setShow3DIntro(true)}
           />
         )}
       </main>
