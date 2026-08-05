@@ -100,6 +100,16 @@ export default function App() {
 
   useEffect(() => {
     fetchGlobalData();
+    const titleMap = {
+      dashboard: 'Dashboard | Zeus Builder',
+      catalog: 'Product Catalog | Zeus Builder',
+      categories: 'Category Manager | Zeus Builder',
+      clients: 'Client Directory | Zeus Builder',
+      build: 'Build Quotation | Zeus Builder',
+      quotations: 'Quotations List | Zeus Builder',
+      settings: 'Shop Settings | Zeus Builder'
+    };
+    document.title = titleMap[activePage] || 'Zeus Builder | PC Quote & Inventory';
   }, [activePage]);
 
   const handleEditQuote = (id) => {
