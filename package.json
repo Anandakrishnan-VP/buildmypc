@@ -4,6 +4,7 @@
   "private": true,
   "description": "PC Builder — Inventory & Quotation Software",
   "scripts": {
+    "build": "npm --prefix client run build",
     "server": "npm --prefix server start",
     "client": "npm --prefix client run dev",
     "dev": "node -e \"const { spawn } = require('child_process'); spawn('npm', ['--prefix', 'server', 'start'], { stdio: 'inherit', shell: true }); spawn('npm', ['--prefix', 'client', 'run', 'dev'], { stdio: 'inherit', shell: true });\""
