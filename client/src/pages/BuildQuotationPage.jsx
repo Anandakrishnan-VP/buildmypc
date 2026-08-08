@@ -1,8 +1,9 @@
 import React, { useState, useEffect } from 'react';
-import { Plus, Trash2, Save, Download, UserPlus, Search, Receipt, Percent } from 'lucide-react';
+import { Plus, Trash2, Save, Download, UserPlus, Search, Receipt, Percent, TrendingUp } from 'lucide-react';
 import { api } from '../api/client';
 import ClientFormModal from '../components/ClientFormModal';
 import PrintableQuotationModal from '../components/PrintableQuotationModal';
+import PriceHistoryModal from '../components/PriceHistoryModal';
 
 export default function BuildQuotationPage({ categories = [], clients = [], activeQuoteId = null, onFinished, showToast = () => {}, showConfirm = () => {} }) {
   const [selectedClientId, setSelectedClientId] = useState('');
@@ -12,6 +13,7 @@ export default function BuildQuotationPage({ categories = [], clients = [], acti
   const [notes, setNotes] = useState('');
   const [quotationId, setQuotationId] = useState(activeQuoteId);
   const [items, setItems] = useState([]);
+  const [historyProduct, setHistoryProduct] = useState(null);
 
   const [allProducts, setAllProducts] = useState([]);
   const [productSearch, setProductSearch] = useState('');
@@ -280,12 +282,36 @@ export default function BuildQuotationPage({ categories = [], clients = [], acti
 
   // Filter products by active category tab & search
   const filteredProducts = allProducts.filter((p) => {
+    if (!p) return false;
     const matchesCat = !activeCategoryTab || String(p.category_id) === String(activeCategoryTab);
-    const matchesSearch = !productSearch ||
-      p.brand.toLowerCase().includes(productSearch.toLowerCase()) ||
-      p.model_name.toLowerCase().includes(productSearch.toLowerCase()) ||
-      JSON.stringify(p.specs || []).toLowerCase().includes(productSearch.toLowerCase());
-    return matchesCat && matchesSearch;
+    if (!matchesCat) return false;
+
+    if (!productSearch || !productSearch.trim()) return true;
+
+    const q = productSearch.toLowerCase().trim();
+    const brand = String(p.brand || '').toLowerCase();
+    const model = String(p.model_name || '').toLowerCase();
+    const id = String(p.id || '').toLowerCase();
+
+    let specsStr = '';
+    if (Array.isArray(p.specs)) {
+      specsStr = p.specs
+        .map(s => (typeof s === 'object' ? Object.entries(s).map(([k, v]) => `${k} ${v}`).join(' ') : String(s)))
+        .join(' ')
+        .toLowerCase();
+    } else if (typeof p.specs === 'string') {
+      specsStr = p.specs.toLowerCase();
+    } else {
+      specsStr = JSON.stringify(p.specs || '').toLowerCase();
+    }
+
+    const matchBrand = brand.includes(q);
+    const matchModel = model.includes(q);
+    const matchId = id.includes(q);
+    const matchSpecs = specsStr.includes(q);
+    const matchCombo = `${brand} ${model}`.includes(q);
+
+    return matchBrand || matchModel || matchId || matchSpecs || matchCombo;
   });
 
   // Calculate totals for bottom bar
@@ -390,7 +416,6 @@ export default function BuildQuotationPage({ categories = [], clients = [], acti
               <div><strong>Name:</strong> {selectedClient.name}</div>
               <div><strong>Phone:</strong> {selectedClient.phone}</div>
               {selectedClient.email && <div><strong>Email:</strong> {selectedClient.email}</div>}
-              {selectedClient.gstin && <div><strong>GSTIN:</strong> {selectedClient.gstin}</div>}
             </div>
           )}
         </div>
@@ -472,14 +497,24 @@ export default function BuildQuotationPage({ categories = [], clients = [], acti
                       </div>
                       <div style={{ fontSize: '10px', color: 'var(--text-muted)' }}>Incl. {gstPercent}% GST</div>
                     </div>
-                    <button
-                      className="btn btn-primary btn-sm"
-                      onClick={() => handleAddComponent(p)}
-                      title="Add to quotation build"
-                      style={{ padding: '6px 10px' }}
-                    >
-                      <Plus size={14} /> Add
-                    </button>
+                    <div style={{ display: 'flex', gap: '6px' }}>
+                      <button
+                        className="btn btn-secondary btn-sm"
+                        onClick={() => setHistoryProduct(p)}
+                        title="View Component Price History Graph"
+                        style={{ padding: '6px 8px', color: '#f59e0b', borderColor: 'rgba(245, 158, 11, 0.4)' }}
+                      >
+                        <TrendingUp size={14} />
+                      </button>
+                      <button
+                        className="btn btn-primary btn-sm"
+                        onClick={() => handleAddComponent(p)}
+                        title="Add to quotation build"
+                        style={{ padding: '6px 10px' }}
+                      >
+                        <Plus size={14} /> Add
+                      </button>
+                    </div>
                   </div>
                 </div>
               );
@@ -700,7 +735,12 @@ export default function BuildQuotationPage({ categories = [], clients = [], acti
                       name="marginStrategy"
                       value="selected"
                       checked={marginStrategy === 'selected'}
-                      onChange={() => setMarginStrategy('selected')}
+                      onChange={() => {
+                        setMarginStrategy('selected');
+                        if (marginSelectedItems.length === 0) {
+                          setMarginSelectedItems(items.map(i => i.id || i.product_id));
+                        }
+                      }}
                     />
                     Selected Components Only
                   </label>
@@ -715,32 +755,52 @@ export default function BuildQuotationPage({ categories = [], clients = [], acti
                       type="button"
                       className="btn btn-secondary btn-sm"
                       style={{ fontSize: '11px', padding: '2px 6px' }}
-                      onClick={() => setMarginSelectedItems(marginSelectedItems.length === items.length ? [] : items.map(i => i.id))}
+                      onClick={() => {
+                        const allIds = items.map(i => i.id || i.product_id);
+                        setMarginSelectedItems(marginSelectedItems.length === items.length ? [] : allIds);
+                      }}
                     >
                       {marginSelectedItems.length === items.length ? 'Deselect All' : 'Select All'}
                     </button>
                   </div>
                   <div style={{ maxHeight: '180px', overflowY: 'auto', background: 'var(--bg-secondary)', border: '1px solid var(--border-color)', borderRadius: '6px', padding: '8px' }}>
-                    {items.map((it) => {
-                      const snap = typeof it.product_snapshot === 'string' ? JSON.parse(it.product_snapshot) : (it.product_snapshot || {});
-                      const isSelected = marginSelectedItems.includes(it.id);
-                      return (
-                        <label key={it.id} style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '4px 6px', fontSize: '12px', borderBottom: '1px solid var(--border-color)', cursor: 'pointer' }}>
-                          <input
-                            type="checkbox"
-                            checked={isSelected}
-                            onChange={(e) => {
-                              if (e.target.checked) setMarginSelectedItems([...marginSelectedItems, it.id]);
-                              else setMarginSelectedItems(marginSelectedItems.filter(id => id !== it.id));
-                            }}
-                          />
-                          <div style={{ flex: 1, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                            <strong>{snap.brand} {snap.model_name}</strong>
-                          </div>
-                          <div style={{ fontWeight: 700 }}>₹{(Number(snap.price_after_gst) || 0).toLocaleString('en-IN')}</div>
-                        </label>
-                      );
-                    })}
+                    {items.length === 0 ? (
+                      <div style={{ padding: '12px', textAlign: 'center', color: 'var(--text-muted)', fontSize: '12px' }}>
+                        No components added to the build yet.
+                      </div>
+                    ) : (
+                      items.map((it, idx) => {
+                        let snap = {};
+                        if (typeof it.product_snapshot === 'string') {
+                          try { snap = JSON.parse(it.product_snapshot); } catch (e) { snap = {}; }
+                        } else {
+                          snap = it.product_snapshot || {};
+                        }
+
+                        const itemId = it.id || it.product_id || `item_${idx}`;
+                        const isSelected = marginSelectedItems.includes(itemId);
+                        const brandStr = snap.brand || it.brand || '';
+                        const modelStr = snap.model_name || it.model_name || it.product_name || `Component #${idx + 1}`;
+                        const priceVal = Number(snap.price_after_gst ?? it.price_after_gst ?? it.unit_price ?? 0);
+
+                        return (
+                          <label key={itemId} style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '6px 8px', fontSize: '12px', borderBottom: '1px solid var(--border-color)', cursor: 'pointer' }}>
+                            <input
+                              type="checkbox"
+                              checked={isSelected}
+                              onChange={(e) => {
+                                if (e.target.checked) setMarginSelectedItems([...marginSelectedItems, itemId]);
+                                else setMarginSelectedItems(marginSelectedItems.filter(id => id !== itemId));
+                              }}
+                            />
+                            <div style={{ flex: 1, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                              <strong>{brandStr} {modelStr}</strong>
+                            </div>
+                            <div style={{ fontWeight: 700 }}>₹{priceVal.toLocaleString('en-IN')}</div>
+                          </label>
+                        );
+                      })
+                    )}
                   </div>
                 </div>
               )}
@@ -824,6 +884,12 @@ export default function BuildQuotationPage({ categories = [], clients = [], acti
             showToast('Failed to create client: ' + err.message, 'error');
           }
         }}
+      />
+
+      <PriceHistoryModal
+        product={historyProduct}
+        isOpen={Boolean(historyProduct)}
+        onClose={() => setHistoryProduct(null)}
       />
     </div>
   );

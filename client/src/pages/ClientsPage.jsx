@@ -208,7 +208,7 @@ export default function ClientsPage({ onNavigate, showToast = () => {}, showConf
               </button>
             </div>
             <div className="modal-body">
-              {selectedClientHistory.quotations.length === 0 ? (
+              {(!selectedClientHistory.quotations || selectedClientHistory.quotations.length === 0) ? (
                 <div style={{ textAlign: 'center', padding: '20px', color: 'var(--text-muted)' }}>
                   No quotations created for this client yet.
                 </div>
@@ -224,7 +224,7 @@ export default function ClientsPage({ onNavigate, showToast = () => {}, showConf
                       </tr>
                     </thead>
                     <tbody>
-                      {selectedClientHistory.quotations.map((q) => (
+                      {(selectedClientHistory.quotations || []).map((q) => (
                         <tr key={q.id}>
                           <td style={{ fontWeight: 700, color: 'var(--primary)' }}>{q.id}</td>
                           <td>{q.build_name || 'Custom PC'}</td>

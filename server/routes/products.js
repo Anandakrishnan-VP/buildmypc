@@ -137,9 +137,45 @@ router.post('/', async (req, res) => {
       ]
     );
 
+    // Record initial price history
+    await db.run(
+      'INSERT INTO product_price_history (product_id, base_price, price_after_gst) VALUES (?, ?, ?)',
+      [id, pricing.base_price, pricing.price_after_gst]
+    );
+
     const created = await db.get('SELECT * FROM products WHERE id = ?', [id]);
     created.specs = JSON.parse(created.specs);
     res.status(201).json(created);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// GET /api/products/:id/price-history
+router.get('/:id/price-history', async (req, res) => {
+  try {
+    const db = await getDb();
+    const rows = await db.all(
+      'SELECT * FROM product_price_history WHERE product_id = ? ORDER BY created_at ASC',
+      [req.params.id]
+    );
+    res.json(rows || []);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// POST /api/products/:id/price-history
+router.post('/:id/price-history', async (req, res) => {
+  try {
+    const { base_price, price_after_gst, created_at } = req.body;
+    const db = await getDb();
+    const time = created_at || new Date().toISOString();
+    await db.run(
+      'INSERT INTO product_price_history (product_id, base_price, price_after_gst, created_at) VALUES (?, ?, ?, ?)',
+      [req.params.id, Number(base_price) || 0, Number(price_after_gst) || 0, time]
+    );
+    res.json({ success: true });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -193,6 +229,14 @@ router.put('/:id', async (req, res) => {
         id
       ]
     );
+
+    // Record price history if price changed or updated
+    if (existing.price_after_gst !== pricing.price_after_gst || existing.base_price !== pricing.base_price) {
+      await db.run(
+        'INSERT INTO product_price_history (product_id, base_price, price_after_gst) VALUES (?, ?, ?)',
+        [id, pricing.base_price, pricing.price_after_gst]
+      );
+    }
 
     const updated = await db.get('SELECT * FROM products WHERE id = ?', [id]);
     updated.specs = JSON.parse(updated.specs);

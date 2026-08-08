@@ -64,7 +64,15 @@ export default function ProductFormModal({ isOpen, onClose, onSave, categories =
       showToast('Please fill in Category, Brand, Model Name, and Base Price.', 'error');
       return;
     }
-    onSave(formData);
+    const sanitized = {
+      ...formData,
+      base_price: Number(formData.base_price),
+      gst_percent: Number(formData.gst_percent),
+      stock_qty: formData.stock_qty !== '' && formData.stock_qty !== null && formData.stock_qty !== undefined ? Number(formData.stock_qty) : null,
+      warranty: typeof formData.warranty === 'string' ? (formData.warranty.trim() || null) : formData.warranty,
+      image_url: typeof formData.image_url === 'string' ? (formData.image_url.trim() || null) : formData.image_url
+    };
+    onSave(sanitized);
   };
 
   return (

@@ -180,25 +180,53 @@ export const api = {
         if (params.activeOnly) query = query.eq('is_active', true);
         if (params.category) query = query.eq('category_id', params.category);
         if (params.category_id) query = query.eq('category_id', params.category_id);
-        const { data, error } = await query;
+        let { data, error } = await query;
         if (error) throw error;
         if (data) {
-          return data.map(p => ({
+          let parsed = data.map(p => ({
             ...p,
             specs: typeof p.specs === 'string' ? JSON.parse(p.specs || '[]') : (p.specs || [])
           }));
+
+          if (params.search && params.search.trim()) {
+            const q = params.search.trim().toLowerCase();
+            parsed = parsed.filter(p => {
+              const brand = (p.brand || '').toLowerCase();
+              const model = (p.model_name || '').toLowerCase();
+              const id = (p.id || '').toLowerCase();
+              const specsStr = typeof p.specs === 'string' ? p.specs.toLowerCase() : JSON.stringify(p.specs || '').toLowerCase();
+              return brand.includes(q) || model.includes(q) || id.includes(q) || specsStr.includes(q) || `${brand} ${model}`.includes(q);
+            });
+          }
+
+          return parsed;
         }
       } catch (err) {
         console.warn('Supabase getProducts failed, falling back:', err.message);
       }
     }
     try {
-      const queryStr = new URLSearchParams(params).toString();
+      const queryParams = {};
+      if (params.search) queryParams.search = params.search;
+      if (params.category) queryParams.category = params.category;
+      if (params.category_id) queryParams.category = params.category_id;
+      if (params.activeOnly !== undefined) queryParams.activeOnly = params.activeOnly;
+      const queryStr = new URLSearchParams(queryParams).toString();
       return await request(`/products${queryStr ? `?${queryStr}` : ''}`);
     } catch (e) {
       let prods = getLS(LS_KEYS.PRODUCTS, []);
       if (params.activeOnly) prods = prods.filter(p => p.is_active !== false);
       if (params.category) prods = prods.filter(p => String(p.category_id) === String(params.category));
+      if (params.search && params.search.trim()) {
+        const q = params.search.trim().toLowerCase();
+        prods = prods.filter(p => {
+          const brand = (p.brand || '').toLowerCase();
+          const model = (p.model_name || '').toLowerCase();
+          const id = (p.id || '').toLowerCase();
+          const specsStr = typeof p.specs === 'string' ? p.specs.toLowerCase() : JSON.stringify(p.specs || '').toLowerCase();
+          return brand.includes(q) || model.includes(q) || id.includes(q) || specsStr.includes(q) || `${brand} ${model}`.includes(q);
+        });
+      }
       return prods;
     }
   },
@@ -246,68 +274,145 @@ export const api = {
       is_active: data.is_active !== undefined ? Boolean(data.is_active) : true
     };
 
-    if (isSupabaseConfigured) {
-      const { data: inserted, error } = await supabase.from('products').insert([formattedData]).select();
-      if (error) throw new Error(`Supabase Product Insert Error: ${error.message}`);
-      if (inserted && inserted[0]) {
-        return {
-          ...inserted[0],
-          specs: typeof inserted[0].specs === 'string' ? JSON.parse(inserted[0].specs || '[]') : (inserted[0].specs || [])
-        };
+      if (isSupabaseConfigured) {
+        const { data: inserted, error } = await supabase.from('products').insert([formattedData]).select();
+        if (error) throw new Error(`Supabase Product Insert Error: ${error.message}`);
+        if (inserted && inserted[0]) {
+          const resObj = {
+            ...inserted[0],
+            specs: typeof inserted[0].specs === 'string' ? JSON.parse(inserted[0].specs || '[]') : (inserted[0].specs || [])
+          };
+          api.recordPriceHistory(resObj.id, basePrice, priceAfterGst).catch(() => {});
+          return resObj;
+        }
       }
-    }
 
-    try {
-      return await request('/products', { method: 'POST', body: formattedData });
-    } catch (e) {
-      const prods = getLS(LS_KEYS.PRODUCTS, []);
-      const newProd = { ...formattedData, specs: data.specs || [] };
-      prods.push(newProd);
-      setLS(LS_KEYS.PRODUCTS, prods);
-      return newProd;
-    }
-  },
-
-  updateProduct: async (id, data) => {
-    const basePrice = data.base_price !== undefined ? Number(data.base_price) : undefined;
-    const gstPercent = data.gst_percent !== undefined ? Number(data.gst_percent) : undefined;
-    
-    const formattedData = { ...data };
-    if (basePrice !== undefined) formattedData.base_price = basePrice;
-    if (gstPercent !== undefined) formattedData.gst_percent = gstPercent;
-    if (basePrice !== undefined || gstPercent !== undefined) {
-      const bp = basePrice !== undefined ? basePrice : 0;
-      const gp = gstPercent !== undefined ? gstPercent : 18;
-      formattedData.price_after_gst = Math.round((bp + (bp * gp / 100)) * 100) / 100;
-    }
-    if (data.specs) {
-      formattedData.specs = typeof data.specs === 'string' ? data.specs : JSON.stringify(data.specs);
-    }
-
-    if (isSupabaseConfigured) {
-      const { data: updated, error } = await supabase.from('products').update(formattedData).eq('id', id).select();
-      if (error) throw new Error(`Supabase Product Update Error: ${error.message}`);
-      if (updated && updated[0]) {
-        return {
-          ...updated[0],
-          specs: typeof updated[0].specs === 'string' ? JSON.parse(updated[0].specs || '[]') : (updated[0].specs || [])
-        };
-      }
-    }
-
-    try {
-      return await request(`/products/${id}`, { method: 'PUT', body: formattedData });
-    } catch (e) {
-      const prods = getLS(LS_KEYS.PRODUCTS, []);
-      const idx = prods.findIndex(p => String(p.id) === String(id));
-      if (idx !== -1) {
-        prods[idx] = { ...prods[idx], ...formattedData, specs: data.specs || prods[idx].specs };
+      let resObj;
+      try {
+        resObj = await request('/products', { method: 'POST', body: formattedData });
+      } catch (e) {
+        const prods = getLS(LS_KEYS.PRODUCTS, []);
+        resObj = { ...formattedData, specs: data.specs || [] };
+        prods.push(resObj);
         setLS(LS_KEYS.PRODUCTS, prods);
-        return prods[idx];
       }
-      return data;
-    }
-  },
+      api.recordPriceHistory(resObj.id || formattedData.id, basePrice, priceAfterGst).catch(() => {});
+      return resObj;
+    },
+
+    updateProduct: async (id, data) => {
+      const basePrice = data.base_price !== undefined && data.base_price !== '' ? Number(data.base_price) : undefined;
+      const gstPercent = data.gst_percent !== undefined && data.gst_percent !== '' ? Number(data.gst_percent) : undefined;
+      
+      const formattedData = {};
+      if (data.category_id !== undefined) formattedData.category_id = String(data.category_id);
+      if (data.brand !== undefined) formattedData.brand = String(data.brand);
+      if (data.model_name !== undefined) formattedData.model_name = String(data.model_name);
+      if (basePrice !== undefined) formattedData.base_price = basePrice;
+      if (gstPercent !== undefined) formattedData.gst_percent = gstPercent;
+
+      if (basePrice !== undefined || gstPercent !== undefined) {
+        const bp = basePrice !== undefined ? basePrice : (Number(data.base_price) || 0);
+        const gp = gstPercent !== undefined ? gstPercent : (Number(data.gst_percent) || 18);
+        formattedData.price_after_gst = Math.round((bp + (bp * gp / 100)) * 100) / 100;
+      }
+      if (data.specs !== undefined) {
+        formattedData.specs = typeof data.specs === 'string' ? data.specs : JSON.stringify(data.specs);
+      }
+      if (data.stock_qty !== undefined) {
+        formattedData.stock_qty = (data.stock_qty === '' || data.stock_qty === null || data.stock_qty === undefined) ? null : Number(data.stock_qty);
+      }
+      if (data.warranty !== undefined) {
+        formattedData.warranty = data.warranty ? String(data.warranty) : null;
+      }
+      if (data.image_url !== undefined) {
+        formattedData.image_url = data.image_url ? String(data.image_url) : null;
+      }
+      if (data.is_active !== undefined) {
+        formattedData.is_active = Boolean(data.is_active);
+      }
+
+      let resObj;
+      if (isSupabaseConfigured) {
+        const { data: updated, error } = await supabase.from('products').update(formattedData).eq('id', id).select();
+        if (error) throw new Error(`Supabase Product Update Error: ${error.message}`);
+        if (updated && updated[0]) {
+          resObj = {
+            ...updated[0],
+            specs: typeof updated[0].specs === 'string' ? JSON.parse(updated[0].specs || '[]') : (updated[0].specs || [])
+          };
+          if (basePrice !== undefined || formattedData.price_after_gst !== undefined) {
+            api.recordPriceHistory(id, resObj.base_price, resObj.price_after_gst).catch(() => {});
+          }
+          return resObj;
+        }
+      }
+
+      try {
+        resObj = await request(`/products/${id}`, { method: 'PUT', body: formattedData });
+      } catch (e) {
+        const prods = getLS(LS_KEYS.PRODUCTS, []);
+        const idx = prods.findIndex(p => String(p.id) === String(id));
+        if (idx !== -1) {
+          prods[idx] = { ...prods[idx], ...formattedData, specs: data.specs || prods[idx].specs };
+          setLS(LS_KEYS.PRODUCTS, prods);
+          resObj = prods[idx];
+        } else {
+          resObj = data;
+        }
+      }
+      if (resObj && (basePrice !== undefined || formattedData.price_after_gst !== undefined)) {
+        api.recordPriceHistory(id, resObj.base_price || basePrice || 0, resObj.price_after_gst || formattedData.price_after_gst || 0).catch(() => {});
+      }
+      return resObj;
+    },
+
+    getPriceHistory: async (productId) => {
+      if (isSupabaseConfigured) {
+        try {
+          const { data, error } = await supabase
+            .from('product_price_history')
+            .select('*')
+            .eq('product_id', String(productId))
+            .order('created_at', { ascending: true });
+          if (!error && data && data.length > 0) return data;
+        } catch (e) {
+          console.warn('Supabase price history fetch error:', e);
+        }
+      }
+      try {
+        const res = await request(`/products/${productId}/price-history`);
+        if (res && res.length > 0) return res;
+      } catch (e) {}
+
+      const history = getLS('zeus_price_history', []);
+      const filtered = history.filter(h => String(h.product_id) === String(productId)).sort((a,b) => new Date(a.created_at) - new Date(b.created_at));
+      return filtered;
+    },
+
+    recordPriceHistory: async (productId, basePrice, priceAfterGst) => {
+      const entry = {
+        product_id: String(productId),
+        base_price: Number(basePrice) || 0,
+        price_after_gst: Number(priceAfterGst) || 0,
+        created_at: new Date().toISOString()
+      };
+      if (isSupabaseConfigured) {
+        try {
+          await supabase.from('product_price_history').insert([entry]);
+        } catch (e) {
+          console.warn('Supabase price history insert error:', e);
+        }
+      }
+      try {
+        await request(`/products/${productId}/price-history`, { method: 'POST', body: entry });
+      } catch (e) {
+        const history = getLS('zeus_price_history', []);
+        history.push(entry);
+        setLS('zeus_price_history', history);
+      }
+      return entry;
+    },
 
   deleteProduct: async (id) => {
     if (isSupabaseConfigured) {
@@ -379,18 +484,35 @@ export const api = {
   },
 
   getClient: async (id) => {
+    let clientObj = null;
     if (isSupabaseConfigured) {
       try {
         const { data, error } = await supabase.from('clients').select('*').eq('id', id).single();
-        if (!error && data) return data;
+        if (!error && data) clientObj = data;
       } catch (e) {}
     }
-    try {
-      return await request(`/clients/${id}`);
-    } catch (e) {
-      const clients = getLS(LS_KEYS.CLIENTS, []);
-      return clients.find(c => String(c.id) === String(id)) || null;
+
+    if (!clientObj) {
+      try {
+        clientObj = await request(`/clients/${id}`);
+      } catch (e) {
+        const clients = getLS(LS_KEYS.CLIENTS, []);
+        clientObj = clients.find(c => String(c.id) === String(id)) || null;
+      }
     }
+
+    if (clientObj) {
+      if (!Array.isArray(clientObj.quotations)) {
+        try {
+          const allQuotes = await api.getQuotations();
+          clientObj.quotations = allQuotes.filter(q => String(q.client_id) === String(id));
+        } catch (e) {
+          clientObj.quotations = [];
+        }
+      }
+    }
+
+    return clientObj;
   },
 
   createClient: async (data) => {
@@ -795,32 +917,53 @@ export const api = {
 
   // Settings
   getSettings: async () => {
+    const localData = getLS(LS_KEYS.SETTINGS, null);
     if (isSupabaseConfigured) {
       try {
         const { data, error } = await supabase.from('shop_settings').select('*').eq('id', 'default').single();
-        if (!error && data) return data;
+        if (!error && data) {
+          const merged = { ...data, ...(localData || {}) };
+          return merged;
+        }
       } catch (err) {
         console.warn('Supabase getSettings failed:', err.message);
       }
     }
     try {
-      return await request('/settings');
+      const res = await request('/settings');
+      const merged = { ...(res || {}), ...(localData || {}) };
+      return merged;
     } catch (e) {
-      return getLS(LS_KEYS.SETTINGS, { shop_name: 'Zeus PC Builder', currency: '₹', tax_rate: 18 });
+      return localData || { shop_name: 'MATRIX IT WORLD', currency: '₹', tax_rate: 18 };
     }
   },
 
   updateSettings: async (data) => {
+    const payload = { id: 'default', ...data, updated_at: new Date().toISOString() };
+    setLS(LS_KEYS.SETTINGS, payload);
+
     if (isSupabaseConfigured) {
-      const { data: updated, error } = await supabase.from('shop_settings').upsert({ id: 'default', ...data }).select();
-      if (error) throw new Error(`Supabase Settings Update Error: ${error.message}`);
-      if (updated && updated[0]) return updated[0];
+      try {
+        const { data: updated, error } = await supabase.from('shop_settings').upsert(payload).select();
+        if (!error && updated && updated[0]) {
+          const merged = { ...payload, ...updated[0] };
+          setLS(LS_KEYS.SETTINGS, merged);
+          return merged;
+        }
+        if (error) {
+          console.warn('Supabase settings upsert failed (schema mismatch), saved to local storage:', error.message);
+        }
+      } catch (err) {
+        console.warn('Supabase settings update error, saved to local storage:', err.message);
+      }
     }
     try {
-      return await request('/settings', { method: 'PUT', body: data });
+      const res = await request('/settings', { method: 'PUT', body: payload });
+      const merged = { ...payload, ...(res || {}) };
+      setLS(LS_KEYS.SETTINGS, merged);
+      return merged;
     } catch (e) {
-      setLS(LS_KEYS.SETTINGS, data);
-      return data;
+      return payload;
     }
   }
 };

@@ -63,13 +63,31 @@ CREATE TABLE IF NOT EXISTS quotation_items (
 
 CREATE TABLE IF NOT EXISTS shop_settings (
   id TEXT PRIMARY KEY DEFAULT 'default',
-  name TEXT NOT NULL DEFAULT 'Zeus PC Custom Builds',
-  logo_url TEXT DEFAULT NULL,
-  address TEXT DEFAULT '123 Tech Street, Electronic City, Bengaluru, Karnataka 560100',
-  phone TEXT DEFAULT '+91 98765 43210',
-  email TEXT DEFAULT 'sales@zeuspc.in',
-  gstin TEXT DEFAULT '29ABCDE1234F1Z5',
-  default_gst_percent REAL DEFAULT 18,
-  terms_conditions TEXT DEFAULT '1. Quotation valid for 7 days from issue date.\n2. Prices inclusive of GST as indicated.\n3. Warranty as per manufacturer terms.',
-  quotation_prefix TEXT DEFAULT 'QTN'
+  name TEXT NOT NULL DEFAULT 'Zeus PC Builder',
+  address TEXT NOT NULL DEFAULT '123 Tech Street, Silicon City',
+  phone TEXT NOT NULL DEFAULT '+91 98765 43210',
+  email TEXT NOT NULL DEFAULT 'sales@zeuspc.com',
+  website TEXT DEFAULT 'https://zeuspc.com',
+  gstin TEXT DEFAULT '32AABCF1234H1Z5',
+  pan TEXT DEFAULT 'AABCF1234H',
+  bank_name TEXT DEFAULT 'HDFC Bank',
+  account_number TEXT DEFAULT '50200012345678',
+  ifsc_code TEXT DEFAULT 'HDFC0001234',
+  terms_conditions TEXT DEFAULT '1. 100% advance payment required.\n2. Prices inclusive of GST.\n3. Goods once sold cannot be returned.',
+  quotation_prefix TEXT DEFAULT 'QTN',
+  consultant_name TEXT DEFAULT 'Alex Mercer',
+  consultant_phone TEXT DEFAULT '+91 98765 00000',
+  validity_days INTEGER DEFAULT 2,
+  updated_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
+
+CREATE TABLE IF NOT EXISTS product_price_history (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  product_id TEXT NOT NULL,
+  base_price REAL NOT NULL,
+  price_after_gst REAL NOT NULL,
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  FOREIGN KEY(product_id) REFERENCES products(id) ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS idx_price_history_product ON product_price_history(product_id);

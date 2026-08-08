@@ -9,6 +9,7 @@ export default function SettingsPage({ showToast = () => {}, onReplayIntro = () 
     address: '',
     phone: '',
     email: '',
+    website: 'https://www.matrixitworld.com',
     gstin: '',
     consultant_name: 'Sales Team',
     consultant_phone: '',
@@ -32,6 +33,7 @@ export default function SettingsPage({ showToast = () => {}, onReplayIntro = () 
         address: data.address || '',
         phone: data.phone || '',
         email: data.email || '',
+        website: data.website || 'https://www.matrixitworld.com',
         gstin: data.gstin || '',
         consultant_name: data.consultant_name || 'Sales Team',
         consultant_phone: data.consultant_phone || '',
@@ -101,6 +103,17 @@ export default function SettingsPage({ showToast = () => {}, onReplayIntro = () 
                 placeholder="e.g. MATRIX IT WORLD"
                 value={settings.name}
                 onChange={(e) => setSettings({ ...settings, name: e.target.value })}
+              />
+            </div>
+
+            <div className="form-group">
+              <label className="form-label">Website Link (Appears on PDF Letterhead)</label>
+              <input
+                type="text"
+                className="form-input"
+                placeholder="e.g. https://www.matrixitworld.com"
+                value={settings.website}
+                onChange={(e) => setSettings({ ...settings, website: e.target.value })}
               />
             </div>
 

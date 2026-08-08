@@ -78,17 +78,34 @@ CREATE TABLE IF NOT EXISTS quotation_items (
 -- 6. Shop Settings Table
 CREATE TABLE IF NOT EXISTS shop_settings (
   id TEXT PRIMARY KEY DEFAULT 'default',
-  name TEXT NOT NULL DEFAULT 'Zeus PC Custom Builds',
+  name TEXT NOT NULL DEFAULT 'Zeus PC Builder',
   logo_url TEXT DEFAULT NULL,
-  address TEXT DEFAULT '123 Tech Street, Electronic City, Bengaluru, Karnataka 560100',
+  address TEXT DEFAULT '123 Tech Street, Silicon City',
   phone TEXT DEFAULT '+91 98765 43210',
-  email TEXT DEFAULT 'sales@zeuspc.in',
-  gstin TEXT DEFAULT '29ABCDE1234F1Z5',
-  default_gst_percent NUMERIC DEFAULT 18,
-  terms_conditions TEXT DEFAULT '1. Quotation valid for 7 days from issue date.\n2. Prices inclusive of GST as indicated.\n3. Warranty as per manufacturer terms.',
+  email TEXT DEFAULT 'sales@zeuspc.com',
+  website TEXT DEFAULT 'https://zeuspc.com',
+  gstin TEXT DEFAULT '32AABCF1234H1Z5',
+  pan TEXT DEFAULT 'AABCF1234H',
+  bank_name TEXT DEFAULT 'HDFC Bank',
+  account_number TEXT DEFAULT '50200012345678',
+  ifsc_code TEXT DEFAULT 'HDFC0001234',
+  terms_conditions TEXT DEFAULT '1. 100% advance payment required.\n2. Prices inclusive of GST.\n3. Goods once sold cannot be returned.',
   quotation_prefix TEXT DEFAULT 'QTN',
+  consultant_name TEXT DEFAULT 'Alex Mercer',
+  consultant_phone TEXT DEFAULT '+91 98765 00000',
+  validity_days INTEGER DEFAULT 2,
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
+
+-- Migrations for existing Supabase databases
+ALTER TABLE shop_settings ADD COLUMN IF NOT EXISTS website TEXT DEFAULT 'https://zeuspc.com';
+ALTER TABLE shop_settings ADD COLUMN IF NOT EXISTS pan TEXT DEFAULT 'AABCF1234H';
+ALTER TABLE shop_settings ADD COLUMN IF NOT EXISTS bank_name TEXT DEFAULT 'HDFC Bank';
+ALTER TABLE shop_settings ADD COLUMN IF NOT EXISTS account_number TEXT DEFAULT '50200012345678';
+ALTER TABLE shop_settings ADD COLUMN IF NOT EXISTS ifsc_code TEXT DEFAULT 'HDFC0001234';
+ALTER TABLE shop_settings ADD COLUMN IF NOT EXISTS consultant_name TEXT DEFAULT 'Alex Mercer';
+ALTER TABLE shop_settings ADD COLUMN IF NOT EXISTS consultant_phone TEXT DEFAULT '+91 98765 00000';
+ALTER TABLE shop_settings ADD COLUMN IF NOT EXISTS validity_days INTEGER DEFAULT 2;
 
 -- Disable Row Level Security (RLS) or grant public access for easy multi-device API access
 ALTER TABLE categories DISABLE ROW LEVEL SECURITY;
@@ -111,3 +128,15 @@ INSERT INTO categories (id, name, prefix, description, sort_order) VALUES
   ('cat_9', 'Monitor & Display', 'MON', 'Gaming & Professional IPS / OLED displays', 9),
   ('cat_10', 'Peripherals & Accessories', 'ACC', 'Keyboards, Mice, Headsets & Cables', 10)
 ON CONFLICT (id) DO NOTHING;
+
+-- 7. Product Price History Table
+CREATE TABLE IF NOT EXISTS product_price_history (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  product_id TEXT NOT NULL REFERENCES products(id) ON DELETE CASCADE,
+  base_price NUMERIC NOT NULL,
+  price_after_gst NUMERIC NOT NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_price_history_product ON product_price_history(product_id);
+ALTER TABLE product_price_history DISABLE ROW LEVEL SECURITY;

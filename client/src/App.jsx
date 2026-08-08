@@ -10,9 +10,14 @@ import SettingsPage from './pages/SettingsPage';
 import ToastContainer from './components/ToastContainer';
 import ConfirmModal from './components/ConfirmModal';
 import Opening3DScreen from './components/Opening3DScreen';
+import LoginPage from './components/LoginPage';
 import { api } from './api/client';
 
 export default function App() {
+  const [isAuthenticated, setIsAuthenticated] = useState(() => {
+    return localStorage.getItem('zeus_auth_user') === 'sreejith';
+  });
+
   const [activePage, setActivePage] = useState('dashboard');
   const [categories, setCategories] = useState([]);
   const [clients, setClients] = useState([]);
@@ -67,6 +72,28 @@ export default function App() {
     setConfirmState((prev) => ({ ...prev, isOpen: false }));
   };
 
+  const handleLogin = (username, password) => {
+    if (username.trim() === 'sreejith' && password === 'sreejith@matrixgaming') {
+      localStorage.setItem('zeus_auth_user', 'sreejith');
+      setIsAuthenticated(true);
+      showToast('Welcome back, Sreejith!', 'success');
+      return true;
+    }
+    return false;
+  };
+
+  const handleLogout = () => {
+    showConfirm(
+      'Sign Out',
+      'Are you sure you want to sign out of Zeus PC Builder?',
+      () => {
+        localStorage.removeItem('zeus_auth_user');
+        setIsAuthenticated(false);
+        showToast('Logged out successfully', 'info');
+      }
+    );
+  };
+
   // Theme Management (Dark / Light)
   const [theme, setTheme] = useState(() => {
     return localStorage.getItem('zeus_theme') || 'dark';
@@ -99,7 +126,9 @@ export default function App() {
   };
 
   useEffect(() => {
-    fetchGlobalData();
+    if (isAuthenticated) {
+      fetchGlobalData();
+    }
     const titleMap = {
       dashboard: 'Dashboard | Zeus Builder',
       catalog: 'Product Catalog | Zeus Builder',
@@ -110,12 +139,21 @@ export default function App() {
       settings: 'Shop Settings | Zeus Builder'
     };
     document.title = titleMap[activePage] || 'Zeus Builder | PC Quote & Inventory';
-  }, [activePage]);
+  }, [activePage, isAuthenticated]);
 
   const handleEditQuote = (id) => {
     setEditingQuoteId(id);
     setActivePage('build');
   };
+
+  if (!isAuthenticated) {
+    return (
+      <>
+        <ToastContainer toasts={toasts} onRemove={removeToast} />
+        <LoginPage onLogin={handleLogin} />
+      </>
+    );
+  }
 
   return (
     <div className="app-container">
@@ -143,6 +181,7 @@ export default function App() {
         setIsCollapsed={setIsSidebarCollapsed}
         theme={theme}
         toggleTheme={toggleTheme}
+        onLogout={handleLogout}
       />
 
       <main className={`main-content ${isSidebarCollapsed ? 'sidebar-collapsed' : ''}`}>

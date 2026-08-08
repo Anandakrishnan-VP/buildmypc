@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from 'react';
-import { Plus, Search, Edit3, Trash2 } from 'lucide-react';
+import { Plus, Search, Edit3, Trash2, TrendingUp } from 'lucide-react';
 import { api } from '../api/client';
 import ProductFormModal from '../components/ProductFormModal';
+import PriceHistoryModal from '../components/PriceHistoryModal';
 
 export default function CatalogPage({ categories = [], showToast = () => {}, showConfirm = () => {} }) {
   const [products, setProducts] = useState([]);
@@ -10,6 +11,7 @@ export default function CatalogPage({ categories = [], showToast = () => {}, sho
   const [selectedCategory, setSelectedCategory] = useState('');
   const [showModal, setShowModal] = useState(false);
   const [editProduct, setEditProduct] = useState(null);
+  const [historyProduct, setHistoryProduct] = useState(null);
 
   const fetchProducts = async () => {
     setLoading(true);
@@ -192,6 +194,14 @@ export default function CatalogPage({ categories = [], showToast = () => {}, sho
                       <div style={{ display: 'inline-flex', gap: '6px' }}>
                         <button
                           className="btn btn-secondary btn-sm"
+                          onClick={() => setHistoryProduct(p)}
+                          title="View Price History & Graph"
+                          style={{ color: '#f59e0b', borderColor: 'rgba(245, 158, 11, 0.4)' }}
+                        >
+                          <TrendingUp size={14} />
+                        </button>
+                        <button
+                          className="btn btn-secondary btn-sm"
                           onClick={() => {
                             setEditProduct(p);
                             setShowModal(true);
@@ -227,6 +237,12 @@ export default function CatalogPage({ categories = [], showToast = () => {}, sho
         categories={categories}
         initialData={editProduct}
         showToast={showToast}
+      />
+
+      <PriceHistoryModal
+        product={historyProduct}
+        isOpen={Boolean(historyProduct)}
+        onClose={() => setHistoryProduct(null)}
       />
     </div>
   );

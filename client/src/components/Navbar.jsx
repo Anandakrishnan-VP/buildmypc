@@ -11,7 +11,8 @@ import {
   PanelLeftClose,
   PanelLeftOpen,
   Sun,
-  Moon
+  Moon,
+  LogOut
 } from 'lucide-react';
 
 export default function Navbar({
@@ -21,7 +22,8 @@ export default function Navbar({
   isCollapsed = false,
   setIsCollapsed = () => {},
   theme = 'dark',
-  toggleTheme = () => {}
+  toggleTheme = () => {},
+  onLogout = () => {}
 }) {
   const navItems = [
     { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
@@ -87,8 +89,8 @@ export default function Navbar({
         })}
       </ul>
 
-      {/* Theme Switcher Footer */}
-      <div className="sidebar-footer">
+      {/* Theme Switcher & Logout Footer */}
+      <div className="sidebar-footer" style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
         <button
           className="theme-toggle-btn"
           onClick={toggleTheme}
@@ -97,6 +99,18 @@ export default function Navbar({
           {theme === 'dark' ? <Sun size={18} color="#f59e0b" /> : <Moon size={18} color="#7c3aed" />}
           <span className="theme-label">
             {theme === 'dark' ? 'Light Mode' : 'Retro Dark'}
+          </span>
+        </button>
+
+        <button
+          className="theme-toggle-btn"
+          onClick={onLogout}
+          title="Sign Out of Zeus Builder"
+          style={{ color: 'var(--danger)', border: '1px solid rgba(239, 68, 68, 0.25)', background: 'rgba(239, 68, 68, 0.08)' }}
+        >
+          <LogOut size={18} color="#ef4444" />
+          <span className="theme-label" style={{ fontWeight: 700 }}>
+            Sign Out
           </span>
         </button>
       </div>
