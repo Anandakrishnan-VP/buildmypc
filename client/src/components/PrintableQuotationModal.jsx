@@ -1,5 +1,40 @@
 import React from 'react';
-import { Printer, X, ShieldCheck, Cpu } from 'lucide-react';
+import { Printer, X, Cpu } from 'lucide-react';
+
+function getProductInfo(item) {
+  let snap = item.product_snapshot;
+  if (typeof snap === 'string') {
+    try {
+      snap = JSON.parse(snap);
+    } catch (e) {
+      snap = {};
+    }
+  }
+  snap = snap || {};
+
+  const brand = snap.brand || item.brand || '';
+  const model = snap.model_name || item.model_name || item.product_name || '';
+  
+  let title = `${brand} ${model}`.trim();
+  if (!title) {
+    title = item.product_id ? `Component (${item.product_id})` : 'Hardware Component';
+  }
+
+  let specs = snap.specs || item.specs || [];
+  if (typeof specs === 'string') {
+    try {
+      specs = JSON.parse(specs || '[]');
+    } catch (e) {
+      specs = [];
+    }
+  }
+
+  const basePrice = Number(snap.base_price ?? item.base_price ?? item.unit_price ?? 0);
+  const gstPercent = Number(snap.gst_percent ?? item.gst_percent ?? 18);
+  const priceAfterGst = Number(snap.price_after_gst ?? item.price_after_gst ?? (basePrice + (basePrice * gstPercent / 100)));
+
+  return { title, specs, basePrice, gstPercent, priceAfterGst };
+}
 
 export default function PrintableQuotationModal({ isOpen, onClose, quotation, client, items = [], settings = {} }) {
   if (!isOpen || !quotation) return null;
@@ -15,20 +50,18 @@ export default function PrintableQuotationModal({ isOpen, onClose, quotation, cl
   const gstMap = {};
 
   items.forEach(item => {
-    const snap = item.product_snapshot || {};
-    const basePrice = Number(snap.base_price) || 0;
-    const gstRate = Number(snap.gst_percent) || 18;
+    const info = getProductInfo(item);
     const qty = Number(item.quantity) || 1;
     
-    const lineBase = basePrice * qty;
-    const lineGst = lineBase * (gstRate / 100);
+    const lineBase = info.basePrice * qty;
+    const lineGst = lineBase * (info.gstPercent / 100);
     
     subtotal += lineBase;
     totalGst += lineGst;
 
-    if (!gstMap[gstRate]) gstMap[gstRate] = { rate: gstRate, taxable: 0, gst: 0 };
-    gstMap[gstRate].taxable += lineBase;
-    gstMap[gstRate].gst += lineGst;
+    if (!gstMap[info.gstPercent]) gstMap[info.gstPercent] = { rate: info.gstPercent, taxable: 0, gst: 0 };
+    gstMap[info.gstPercent].taxable += lineBase;
+    gstMap[info.gstPercent].gst += lineGst;
   });
 
   const discount = Number(quotation.discount) || 0;
@@ -134,27 +167,24 @@ export default function PrintableQuotationModal({ isOpen, onClose, quotation, cl
             </thead>
             <tbody>
               {items.map((it, idx) => {
-                const snap = it.product_snapshot || {};
-                const basePrice = Number(snap.base_price) || 0;
-                const gstPercent = Number(snap.gst_percent) || 18;
-                const priceAfterGst = Number(snap.price_after_gst) || (basePrice + (basePrice * gstPercent / 100));
+                const info = getProductInfo(it);
                 const qty = Number(it.quantity) || 1;
-                const lineTotal = priceAfterGst * qty;
+                const lineTotal = info.priceAfterGst * qty;
 
                 return (
                   <tr key={idx} style={{ borderBottom: '1px solid #e2e8f0', background: idx % 2 === 0 ? '#ffffff' : '#f8fafc' }}>
                     <td style={{ padding: '10px 12px', textAlign: 'center', fontWeight: 700, color: '#64748b' }}>{idx + 1}</td>
                     <td style={{ padding: '10px 12px' }}>
-                      <div style={{ fontWeight: 800, color: '#0f172a', fontSize: '13px' }}>{snap.brand} {snap.model_name}</div>
-                      {Array.isArray(snap.specs) && snap.specs.length > 0 && (
+                      <div style={{ fontWeight: 800, color: '#0f172a', fontSize: '13px' }}>{info.title}</div>
+                      {Array.isArray(info.specs) && info.specs.length > 0 && (
                         <div style={{ fontSize: '10px', color: '#64748b', marginTop: '2px' }}>
-                          {snap.specs.map(s => Object.entries(s).map(([k, v]) => `${k}: ${v}`).join(' | ')).join(' • ')}
+                          {info.specs.map(s => typeof s === 'object' ? Object.entries(s).map(([k, v]) => `${k}: ${v}`).join(' | ') : String(s)).join(' • ')}
                         </div>
                       )}
                     </td>
                     <td style={{ padding: '10px 12px', textAlign: 'right', fontWeight: 700 }}>{qty}</td>
-                    <td style={{ padding: '10px 12px', textAlign: 'right' }}>₹{basePrice.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</td>
-                    <td style={{ padding: '10px 12px', textAlign: 'right', color: '#8b5cf6', fontWeight: 700 }}>{gstPercent}%</td>
+                    <td style={{ padding: '10px 12px', textAlign: 'right' }}>₹{info.basePrice.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</td>
+                    <td style={{ padding: '10px 12px', textAlign: 'right', color: '#8b5cf6', fontWeight: 700 }}>{info.gstPercent}%</td>
                     <td style={{ padding: '10px 12px', textAlign: 'right', fontWeight: 800, color: '#0f172a' }}>₹{lineTotal.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</td>
                   </tr>
                 );
