@@ -14,6 +14,7 @@ export default function QuotationListPage({ onEditQuote, onNavigate, showToast =
   const [activeClientData, setActiveClientData] = useState(null);
   const [activeQuoteItems, setActiveQuoteItems] = useState([]);
   const [settingsData, setSettingsData] = useState({});
+  const [categories, setCategories] = useState([]);
 
   const fetchQuotations = async () => {
     setLoading(true);
@@ -30,6 +31,7 @@ export default function QuotationListPage({ onEditQuote, onNavigate, showToast =
   useEffect(() => {
     fetchQuotations();
     api.getSettings().then((s) => setSettingsData(s || {}));
+    api.getCategories().then((c) => setCategories(c || []));
   }, [search, statusFilter]);
 
   const handleDownloadPdf = async (id) => {
@@ -127,7 +129,7 @@ export default function QuotationListPage({ onEditQuote, onNavigate, showToast =
           />
         </div>
 
-        <div style={{ width: '180px' }}>
+        <div style={{ width: '220px' }}>
           <select
             className="form-select"
             value={statusFilter}
@@ -135,6 +137,7 @@ export default function QuotationListPage({ onEditQuote, onNavigate, showToast =
           >
             <option value="">All Statuses</option>
             <option value="draft">Draft</option>
+            <option value="confirmation_pending">Confirmation Pending</option>
             <option value="sent">Sent</option>
             <option value="accepted">Accepted</option>
             <option value="rejected">Rejected</option>
@@ -192,6 +195,7 @@ export default function QuotationListPage({ onEditQuote, onNavigate, showToast =
                         style={{ border: 'none', background: 'transparent', cursor: 'pointer' }}
                       >
                         <option value="draft">DRAFT</option>
+                        <option value="confirmation_pending">CONFIRMATION PENDING</option>
                         <option value="sent">SENT</option>
                         <option value="accepted">ACCEPTED</option>
                         <option value="rejected">REJECTED</option>
@@ -247,6 +251,7 @@ export default function QuotationListPage({ onEditQuote, onNavigate, showToast =
         quotation={activeQuoteData}
         client={activeClientData}
         items={activeQuoteItems}
+        categories={categories}
         settings={settingsData}
       />
     </div>

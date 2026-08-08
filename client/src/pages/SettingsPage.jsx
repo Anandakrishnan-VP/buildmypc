@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Save, Store, FileText, Play } from 'lucide-react';
+import { Save, Store, FileText, Play, Building2 } from 'lucide-react';
 import { api } from '../api/client';
 
 export default function SettingsPage({ showToast = () => {}, onReplayIntro = () => {} }) {
@@ -10,6 +10,13 @@ export default function SettingsPage({ showToast = () => {}, onReplayIntro = () 
     phone: '',
     email: '',
     gstin: '',
+    consultant_name: 'Sales Team',
+    consultant_phone: '',
+    bank_name: 'Axis Bank',
+    account_number: '923020059560559',
+    ifsc_code: 'UTIB0000694',
+    branch_name: 'KARAMANA',
+    validity_days: 2,
     default_gst_percent: 18,
     terms_conditions: '',
     quotation_prefix: 'QTN'
@@ -26,6 +33,13 @@ export default function SettingsPage({ showToast = () => {}, onReplayIntro = () 
         phone: data.phone || '',
         email: data.email || '',
         gstin: data.gstin || '',
+        consultant_name: data.consultant_name || 'Sales Team',
+        consultant_phone: data.consultant_phone || '',
+        bank_name: data.bank_name || 'Axis Bank',
+        account_number: data.account_number || '923020059560559',
+        ifsc_code: data.ifsc_code || 'UTIB0000694',
+        branch_name: data.branch_name || 'KARAMANA',
+        validity_days: data.validity_days ?? 2,
         default_gst_percent: data.default_gst_percent ?? 18,
         terms_conditions: data.terms_conditions || '',
         quotation_prefix: data.quotation_prefix || 'QTN'
@@ -43,7 +57,7 @@ export default function SettingsPage({ showToast = () => {}, onReplayIntro = () 
     try {
       const updated = await api.updateSettings(settings);
       setSettings(updated);
-      showToast('Shop settings updated successfully!', 'success');
+      showToast('Shop & PDF settings updated successfully!', 'success');
     } catch (err) {
       showToast('Failed to update settings: ' + err.message, 'error');
     } finally {
@@ -60,7 +74,7 @@ export default function SettingsPage({ showToast = () => {}, onReplayIntro = () 
       <div className="page-header">
         <div>
           <h1 className="page-title">Shop Settings & PDF Config</h1>
-          <p className="page-subtitle">Configure business letterhead, GSTIN, default tax rates, and PDF terms & conditions</p>
+          <p className="page-subtitle">Configure business letterhead, GSTIN, Bank details, consultant contact, and PDF terms</p>
         </div>
         <button
           className="btn btn-secondary"
@@ -80,13 +94,35 @@ export default function SettingsPage({ showToast = () => {}, onReplayIntro = () 
             </h3>
 
             <div className="form-group">
-              <label className="form-label">Shop / Business Name *</label>
+              <label className="form-label">Shop / Business Name (Optional)</label>
               <input
                 type="text"
                 className="form-input"
+                placeholder="e.g. MATRIX IT WORLD"
                 value={settings.name}
                 onChange={(e) => setSettings({ ...settings, name: e.target.value })}
-                required
+              />
+            </div>
+
+            <div className="form-group">
+              <label className="form-label">Consultant Name (Appears on PDF)</label>
+              <input
+                type="text"
+                className="form-input"
+                placeholder="e.g. Ashiq Kabeer"
+                value={settings.consultant_name}
+                onChange={(e) => setSettings({ ...settings, consultant_name: e.target.value })}
+              />
+            </div>
+
+            <div className="form-group">
+              <label className="form-label">Consultant Phone / Contact Number</label>
+              <input
+                type="text"
+                className="form-input"
+                placeholder="e.g. +91 9946678190"
+                value={settings.consultant_phone}
+                onChange={(e) => setSettings({ ...settings, consultant_phone: e.target.value })}
               />
             </div>
 
@@ -125,9 +161,60 @@ export default function SettingsPage({ showToast = () => {}, onReplayIntro = () 
               <input
                 type="text"
                 className="form-input"
-                placeholder="e.g. 29ABCDE1234F1Z5"
+                placeholder="e.g. 32AAGFM3714M1ZB"
                 value={settings.gstin}
                 onChange={(e) => setSettings({ ...settings, gstin: e.target.value })}
+              />
+            </div>
+          </div>
+
+          {/* Bank Account Details Card */}
+          <div className="card">
+            <h3 style={{ fontSize: '16px', fontWeight: 700, marginBottom: '16px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <Building2 size={20} color="#10b981" /> Bank Account Details (PDF Invoice)
+            </h3>
+
+            <div className="form-group">
+              <label className="form-label">Bank Name</label>
+              <input
+                type="text"
+                className="form-input"
+                placeholder="e.g. Axis Bank / SOUTH INDIAN BANK"
+                value={settings.bank_name}
+                onChange={(e) => setSettings({ ...settings, bank_name: e.target.value })}
+              />
+            </div>
+
+            <div className="form-group">
+              <label className="form-label">Account Number</label>
+              <input
+                type="text"
+                className="form-input"
+                placeholder="e.g. 923020059560559"
+                value={settings.account_number}
+                onChange={(e) => setSettings({ ...settings, account_number: e.target.value })}
+              />
+            </div>
+
+            <div className="form-group">
+              <label className="form-label">IFSC Code</label>
+              <input
+                type="text"
+                className="form-input"
+                placeholder="e.g. UTIB0000694 / SIBL0000347"
+                value={settings.ifsc_code}
+                onChange={(e) => setSettings({ ...settings, ifsc_code: e.target.value.toUpperCase() })}
+              />
+            </div>
+
+            <div className="form-group">
+              <label className="form-label">Branch Name</label>
+              <input
+                type="text"
+                className="form-input"
+                placeholder="e.g. KARAMANA / CALICUT"
+                value={settings.branch_name}
+                onChange={(e) => setSettings({ ...settings, branch_name: e.target.value })}
               />
             </div>
           </div>
@@ -137,6 +224,22 @@ export default function SettingsPage({ showToast = () => {}, onReplayIntro = () 
             <h3 style={{ fontSize: '16px', fontWeight: 700, marginBottom: '16px', display: 'flex', alignItems: 'center', gap: '8px' }}>
               <FileText size={20} color="var(--accent)" /> Quotation & PDF Preferences
             </h3>
+
+            <div className="form-group">
+              <label className="form-label">Default Quote Validity (Days)</label>
+              <input
+                type="number"
+                min="1"
+                max="90"
+                className="form-input"
+                placeholder="e.g. 2"
+                value={settings.validity_days}
+                onChange={(e) => setSettings({ ...settings, validity_days: Math.max(1, Number(e.target.value) || 2) })}
+              />
+              <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '4px' }}>
+                Automatically sets validity date (e.g. 2 days from quote creation date)
+              </div>
+            </div>
 
             <div className="form-group">
               <label className="form-label">Quotation Number Prefix</label>
@@ -164,8 +267,8 @@ export default function SettingsPage({ showToast = () => {}, onReplayIntro = () 
               <label className="form-label">Default Terms & Conditions (PDF Footer)</label>
               <textarea
                 className="form-textarea"
-                rows="6"
-                placeholder="1. Quotation valid for 7 days. 2. Prices inclusive of GST."
+                rows="5"
+                placeholder="Price valid for 2 days from quote issue date. Warranty as per component manufacturer guidelines."
                 value={settings.terms_conditions}
                 onChange={(e) => setSettings({ ...settings, terms_conditions: e.target.value })}
               />

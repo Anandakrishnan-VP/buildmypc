@@ -36,15 +36,14 @@ export default function Navbar({
   return (
     <aside className={`sidebar ${isCollapsed ? 'collapsed' : ''}`}>
       <div className="brand-header">
-        <div className="brand-info">
-          <div className="brand-logo">
-            <Cpu size={22} />
-          </div>
-          {!isCollapsed && (
+        <div className="brand-info" style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+          {!isCollapsed ? (
             <div className="brand-details">
-              <div className="brand-title">ZEUS BUILDER</div>
-              <div className="brand-subtitle">PC Quote & Inventory</div>
+              <div className="brand-title" style={{ fontSize: '15px', fontWeight: 900, letterSpacing: '1px' }}>SREEJITH</div>
+              <div className="brand-subtitle" style={{ fontSize: '10px', color: 'var(--text-muted)' }}>PC Quote & Inventory</div>
             </div>
+          ) : (
+            <div className="brand-title" style={{ fontSize: '14px', fontWeight: 900 }}>S</div>
           )}
         </div>
 

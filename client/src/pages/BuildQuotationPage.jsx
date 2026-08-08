@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Plus, Trash2, Save, Download, UserPlus, Search, Receipt } from 'lucide-react';
+import { Plus, Trash2, Save, Download, UserPlus, Search, Receipt, Percent } from 'lucide-react';
 import { api } from '../api/client';
 import ClientFormModal from '../components/ClientFormModal';
 import PrintableQuotationModal from '../components/PrintableQuotationModal';
@@ -12,7 +12,7 @@ export default function BuildQuotationPage({ categories = [], clients = [], acti
   const [notes, setNotes] = useState('');
   const [quotationId, setQuotationId] = useState(activeQuoteId);
   const [items, setItems] = useState([]);
-  
+
   const [allProducts, setAllProducts] = useState([]);
   const [productSearch, setProductSearch] = useState('');
   const [activeCategoryTab, setActiveCategoryTab] = useState(categories[0]?.id || 'cat_1');
@@ -21,6 +21,13 @@ export default function BuildQuotationPage({ categories = [], clients = [], acti
   const [showPrintModal, setShowPrintModal] = useState(false);
   const [currentQuotationData, setCurrentQuotationData] = useState(null);
   const [settingsData, setSettingsData] = useState({});
+
+  // Margin Distributor state
+  const [showMarginModal, setShowMarginModal] = useState(false);
+  const [marginInput, setMarginInput] = useState('');
+  const [marginStrategy, setMarginStrategy] = useState('all');
+  const [marginSelectedItems, setMarginSelectedItems] = useState([]);
+  const [savingMargin, setSavingMargin] = useState(false);
 
   // Load products catalog and shop settings
   useEffect(() => {
@@ -62,32 +69,53 @@ export default function BuildQuotationPage({ categories = [], clients = [], acti
   // Ensure initial draft quotation exists in database
   const ensureDraft = async (clientIdToUse) => {
     if (quotationId) return quotationId;
+    const validityDays = settingsData.validity_days || 2;
+    const validUntilDate = new Date();
+    validUntilDate.setDate(validUntilDate.getDate() + validityDays);
+
     const res = await api.createQuotation({
       client_id: clientIdToUse || selectedClientId,
       build_name: buildName || 'Custom Gaming Rig',
       discount,
       labour_charge: labourCharge,
-      notes
+      notes,
+      valid_until: validUntilDate.toISOString().split('T')[0]
     });
     setQuotationId(res.id);
     setCurrentQuotationData(res);
     return res.id;
   };
 
-  const handleAddItem = async (product) => {
+  const handleAddComponent = async (product) => {
     if (!selectedClientId) {
       showToast('Please select or create a client first.', 'error');
       return;
     }
+
     try {
       const qId = await ensureDraft(selectedClientId);
+
       const basePrice = Number(product.base_price) || 0;
-      const gstRate = Number(product.gst_percent) || 18;
-      const priceAfterGst = Number(product.price_after_gst) || Math.round((basePrice + (basePrice * gstRate / 100)) * 100) / 100;
+      const gstPercent = Number(product.gst_percent) || 18;
+      const priceAfterGst = Number(product.price_after_gst) || (basePrice + (basePrice * gstPercent / 100));
+
+      const snapshot = {
+        product_id: product.id,
+        brand: product.brand,
+        model_name: product.model_name,
+        category_id: product.category_id,
+        category_name: categories.find(c => c.id === product.category_id)?.name || 'Hardware',
+        specs: product.specs,
+        base_price: basePrice,
+        gst_percent: gstPercent,
+        price_after_gst: priceAfterGst,
+        warranty: product.warranty,
+        image_url: product.image_url
+      };
 
       await api.addQuotationItem(qId, {
         product_id: product.id,
-        product_snapshot: product,
+        product_snapshot: snapshot,
         quantity: 1,
         line_total: priceAfterGst
       });
@@ -95,28 +123,14 @@ export default function BuildQuotationPage({ categories = [], clients = [], acti
       const updated = await api.getQuotation(qId);
       if (updated) {
         setItems(updated.items || []);
-        setCurrentQuotationData(updated.quotation);
       }
-      showToast(`Added "${product.brand} ${product.model_name}" to build`, 'success');
+      showToast(`Added ${product.brand} ${product.model_name} to build`, 'success');
     } catch (err) {
-      showToast('Failed to add item: ' + err.message, 'error');
+      showToast('Failed to add component: ' + err.message, 'error');
     }
   };
 
-  const handleUpdateQty = async (itemId, newQty) => {
-    if (newQty < 1) return;
-    try {
-      await api.updateQuotationItem(quotationId, itemId, { quantity: newQty });
-      const updated = await api.getQuotation(quotationId);
-      if (updated) {
-        setItems(updated.items || []);
-      }
-    } catch (err) {
-      showToast('Failed to update quantity: ' + err.message, 'error');
-    }
-  };
-
-  const handleRemoveItem = async (itemId) => {
+  const handleRemoveComponent = async (itemId) => {
     try {
       await api.removeQuotationItem(quotationId, itemId);
       const updated = await api.getQuotation(quotationId);
@@ -169,14 +183,13 @@ export default function BuildQuotationPage({ categories = [], clients = [], acti
         notes
       });
       await api.finalizeQuotation(qId);
-      
+
       const qData = await api.getQuotation(qId);
       if (qData) {
         setCurrentQuotationData(qData.quotation);
         setItems(qData.items || []);
       }
 
-      // Try server PDF download, or open client-side printable PDF modal
       try {
         const blob = await api.getPdfBlob(qId);
         const url = window.URL.createObjectURL(blob);
@@ -187,7 +200,6 @@ export default function BuildQuotationPage({ categories = [], clients = [], acti
         window.URL.revokeObjectURL(url);
         showToast(`Quotation ${qId} finalized & PDF downloaded!`, 'success');
       } catch (e) {
-        // Express PDF endpoint unavailable -> open printable PDF modal
         setShowPrintModal(true);
         showToast(`Quotation ${qId} finalized! Opening printable PDF...`, 'success');
       }
@@ -196,10 +208,80 @@ export default function BuildQuotationPage({ categories = [], clients = [], acti
     }
   };
 
+  const handleApplyMargin = async () => {
+    const amount = Number(marginInput);
+    if (isNaN(amount) || amount <= 0) {
+      showToast('Please enter a valid margin amount in ₹ (greater than 0)', 'error');
+      return;
+    }
+    if (items.length === 0) {
+      showToast('Add components to the build first before applying margin.', 'error');
+      return;
+    }
+
+    const targetItems = marginStrategy === 'selected'
+      ? items.filter(it => marginSelectedItems.includes(it.id))
+      : items;
+
+    if (targetItems.length === 0) {
+      showToast('Please select at least 1 component to distribute the margin.', 'error');
+      return;
+    }
+
+    const marginPerItem = amount / targetItems.length;
+    setSavingMargin(true);
+
+    try {
+      const qId = await ensureDraft(selectedClientId);
+      const updatedItems = await Promise.all(items.map(async (it) => {
+        if (!targetItems.some(t => String(t.id) === String(it.id))) return it;
+
+        const snap = typeof it.product_snapshot === 'string'
+          ? JSON.parse(it.product_snapshot)
+          : { ...(it.product_snapshot || {}) };
+
+        const currentPriceAfterGst = Number(snap.price_after_gst) || Number(it.unit_price) || 0;
+        const gstRate = Number(snap.gst_percent) || 18;
+
+        const newPriceAfterGst = Math.round((currentPriceAfterGst + marginPerItem) * 100) / 100;
+        const newBasePrice = Math.round((newPriceAfterGst / (1 + (gstRate / 100))) * 100) / 100;
+
+        snap.price_after_gst = newPriceAfterGst;
+        snap.base_price = newBasePrice;
+
+        const updatedSnapStr = JSON.stringify(snap);
+        const newQty = Number(it.quantity) || 1;
+        const newLineTotal = newPriceAfterGst * newQty;
+
+        if (qId && it.id) {
+          await api.updateQuotationItem(qId, it.id, {
+            product_snapshot: updatedSnapStr,
+            line_total: newLineTotal
+          });
+        }
+
+        return {
+          ...it,
+          product_snapshot: snap,
+          line_total: newLineTotal
+        };
+      }));
+
+      setItems(updatedItems);
+      setShowMarginModal(false);
+      setMarginInput('');
+      showToast(`Added ₹${amount.toLocaleString('en-IN')} seller profit margin (+₹${marginPerItem.toFixed(2)} per component)!`, 'success');
+    } catch (err) {
+      showToast('Failed to apply margin: ' + err.message, 'error');
+    } finally {
+      setSavingMargin(false);
+    }
+  };
+
   // Filter products by active category tab & search
   const filteredProducts = allProducts.filter((p) => {
     const matchesCat = !activeCategoryTab || String(p.category_id) === String(activeCategoryTab);
-    const matchesSearch = !productSearch || 
+    const matchesSearch = !productSearch ||
       p.brand.toLowerCase().includes(productSearch.toLowerCase()) ||
       p.model_name.toLowerCase().includes(productSearch.toLowerCase()) ||
       JSON.stringify(p.specs || []).toLowerCase().includes(productSearch.toLowerCase());
@@ -228,7 +310,9 @@ export default function BuildQuotationPage({ categories = [], clients = [], acti
     gstMap[gstRate].gst_amount += lineGst;
   });
 
-  const grandTotal = Math.max(0, subtotal - (Number(discount) || 0) + totalGst + (Number(labourCharge) || 0));
+  const rawGrandTotal = Math.max(0, subtotal - (Number(discount) || 0) + totalGst + (Number(labourCharge) || 0));
+  const grandTotal = Math.round(rawGrandTotal / 50) * 50;
+  const roundOff = Math.round(grandTotal - rawGrandTotal);
   const gstBreakdown = Object.values(gstMap).sort((a, b) => a.rate - b.rate);
   const selectedClient = clients.find(c => String(c.id) === String(selectedClientId));
 
@@ -238,74 +322,107 @@ export default function BuildQuotationPage({ categories = [], clients = [], acti
       <div className="page-header">
         <div>
           <h1 className="page-title">{quotationId ? `Build Quotation — ${quotationId}` : 'Build Custom PC Quotation'}</h1>
-          <p className="page-subtitle">Pick components across categories to assemble your quote</p>
+          <p className="page-subtitle">Select client, configure hardware components, apply discount & profit margin, and generate tax invoice</p>
         </div>
       </div>
 
-      {/* Client & Build Information Header Card */}
-      <div className="card" style={{ marginBottom: '20px', display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: '16px', minWidth: 0, overflow: 'hidden' }}>
-        <div className="form-group" style={{ margin: 0 }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-            <label className="form-label">Client *</label>
-            <button
-              type="button"
-              style={{ background: 'none', border: 'none', color: 'var(--primary)', cursor: 'pointer', fontSize: '12px', display: 'flex', alignItems: 'center', gap: '4px' }}
-              onClick={() => setShowClientModal(true)}
+      {/* Main Grid Layout */}
+      <div style={{ display: 'grid', gridTemplateColumns: '320px 1fr 340px', gap: '20px', flex: 1, paddingBottom: '90px' }}>
+        
+        {/* Left Column: Client & Config */}
+        <div className="card" style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+          <h3 style={{ fontSize: '15px', fontWeight: 700, margin: 0, borderBottom: '1px solid var(--border-color)', paddingBottom: '10px' }}>
+            Quotation Setup
+          </h3>
+
+          <div className="form-group">
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
+              <label className="form-label" style={{ margin: 0 }}>Select Client *</label>
+              <button
+                type="button"
+                className="btn btn-secondary btn-sm"
+                style={{ padding: '2px 8px', fontSize: '11px' }}
+                onClick={() => setShowClientModal(true)}
+              >
+                <UserPlus size={12} /> New Client
+              </button>
+            </div>
+            <select
+              className="form-select"
+              value={selectedClientId}
+              onChange={(e) => setSelectedClientId(e.target.value)}
+              required
             >
-              <UserPlus size={14} /> Quick Add Client
-            </button>
+              <option value="">-- Choose Client --</option>
+              {clients.map((c) => (
+                <option key={c.id} value={c.id}>
+                  {c.name} ({c.phone})
+                </option>
+              ))}
+            </select>
           </div>
-          <select
-            className="form-select"
-            value={selectedClientId}
-            onChange={(e) => setSelectedClientId(e.target.value)}
-          >
-            <option value="">-- Select Client --</option>
-            {clients.map((c) => (
-              <option key={c.id} value={c.id}>
-                {c.name} ({c.phone}) {c.gstin ? `[GSTIN: ${c.gstin}]` : ''}
-              </option>
-            ))}
-          </select>
+
+          <div className="form-group">
+            <label className="form-label">Build Title / PC Config Name</label>
+            <input
+              type="text"
+              className="form-input"
+              placeholder="e.g. Ultra Gaming Rig 2026"
+              value={buildName}
+              onChange={(e) => setBuildName(e.target.value)}
+            />
+          </div>
+
+          <div className="form-group">
+            <label className="form-label">Special Notes / Recommendations</label>
+            <textarea
+              className="form-textarea"
+              rows="3"
+              placeholder="e.g. Price valid for 2 days. 3 Years Warranty on CPU/GPU."
+              value={notes}
+              onChange={(e) => setNotes(e.target.value)}
+            />
+          </div>
+
+          {selectedClient && (
+            <div style={{ background: 'var(--bg-secondary)', padding: '12px', borderRadius: '6px', border: '1px solid var(--border-color)', fontSize: '12px' }}>
+              <div style={{ fontWeight: 700, color: 'var(--primary)', marginBottom: '4px' }}>Client Info:</div>
+              <div><strong>Name:</strong> {selectedClient.name}</div>
+              <div><strong>Phone:</strong> {selectedClient.phone}</div>
+              {selectedClient.email && <div><strong>Email:</strong> {selectedClient.email}</div>}
+              {selectedClient.gstin && <div><strong>GSTIN:</strong> {selectedClient.gstin}</div>}
+            </div>
+          )}
         </div>
 
-        <div className="form-group" style={{ margin: 0 }}>
-          <label className="form-label">Build Title / Name</label>
-          <input
-            type="text"
-            className="form-input"
-            placeholder="e.g. Rahul's 1440p Gaming PC"
-            value={buildName}
-            onChange={(e) => setBuildName(e.target.value)}
-          />
-        </div>
-
-        <div className="form-group" style={{ margin: 0 }}>
-          <label className="form-label">Special Notes / T&C for Quote</label>
-          <input
-            type="text"
-            className="form-input"
-            placeholder="e.g. Free home delivery included"
-            value={notes}
-            onChange={(e) => setNotes(e.target.value)}
-          />
-        </div>
-      </div>
-
-      {/* Main 2-Column Grid */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: '24px', alignItems: 'start', width: '100%', maxWidth: '100%', boxSizing: 'border-box' }}>
-        {/* Left Panel: Component Selector */}
-        <div className="card" style={{ minWidth: 0, overflow: 'hidden' }}>
-          <h3 style={{ fontSize: '16px', fontWeight: 700, marginBottom: '16px' }}>Component Selector</h3>
+        {/* Center Column: Catalog Picker */}
+        <div className="card" style={{ display: 'flex', flexDirection: 'column' }}>
+          <div style={{ marginBottom: '16px', display: 'flex', gap: '12px', alignItems: 'center' }}>
+            <div style={{ flex: 1, position: 'relative' }}>
+              <Search size={16} style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)' }} />
+              <input
+                type="text"
+                className="form-input"
+                style={{ paddingLeft: '36px' }}
+                placeholder="Search products by brand, model, or specs..."
+                value={productSearch}
+                onChange={(e) => setProductSearch(e.target.value)}
+              />
+            </div>
+          </div>
 
           {/* Category Tabs */}
-          <div style={{ display: 'flex', gap: '8px', overflowX: 'auto', paddingBottom: '8px', marginBottom: '16px', borderBottom: '1px solid var(--border-color)' }}>
+          <div className="category-tabs" style={{ display: 'flex', gap: '6px', overflowX: 'auto', paddingBottom: '8px', marginBottom: '12px' }}>
+            <button
+              className={`category-tab ${!activeCategoryTab ? 'active' : ''}`}
+              onClick={() => setActiveCategoryTab('')}
+            >
+              All Categories
+            </button>
             {categories.map((cat) => (
               <button
                 key={cat.id}
-                type="button"
-                className={`btn btn-sm ${String(activeCategoryTab) === String(cat.id) ? 'btn-primary' : 'btn-secondary'}`}
-                style={{ whiteSpace: 'nowrap' }}
+                className={`category-tab ${String(activeCategoryTab) === String(cat.id) ? 'active' : ''}`}
                 onClick={() => setActiveCategoryTab(cat.id)}
               >
                 {cat.name}
@@ -313,160 +430,114 @@ export default function BuildQuotationPage({ categories = [], clients = [], acti
             ))}
           </div>
 
-          {/* Product Search */}
-          <div style={{ position: 'relative', marginBottom: '16px' }}>
-            <Search size={16} style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)' }} />
-            <input
-              type="text"
-              className="form-input"
-              placeholder={`Search ${categories.find(c => String(c.id) === String(activeCategoryTab))?.name || 'parts'}...`}
-              value={productSearch}
-              onChange={(e) => setProductSearch(e.target.value)}
-              style={{ paddingLeft: '36px' }}
-            />
-          </div>
+          {/* Catalog Product Cards */}
+          <div style={{ flex: 1, overflowY: 'auto', display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))', gap: '12px', alignContent: 'start' }}>
+            {filteredProducts.map((p) => {
+              const basePrice = Number(p.base_price) || 0;
+              const gstPercent = Number(p.gst_percent) || 18;
+              const priceAfterGst = Number(p.price_after_gst) || (basePrice + (basePrice * gstPercent / 100));
 
-          {/* Available Parts List */}
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', maxHeight: '480px', overflowY: 'auto' }}>
-            {filteredProducts.length === 0 ? (
-              <div style={{ padding: '24px', textAlign: 'center', color: 'var(--text-muted)', fontSize: '13px' }}>
-                No parts found in this category.
-              </div>
-            ) : (
-              filteredProducts.map((p) => {
-                const basePrice = Number(p.base_price) || 0;
-                const gstRate = Number(p.gst_percent) || 18;
-                const priceAfterGst = Number(p.price_after_gst) || Math.round((basePrice + (basePrice * gstRate / 100)) * 100) / 100;
-
-                return (
-                  <div
-                    key={p.id}
-                    style={{
-                      background: 'var(--bg-input)',
-                      border: '1px solid var(--border-color)',
-                      borderRadius: '8px',
-                      padding: '12px 14px',
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'space-between',
-                      gap: '12px'
-                    }}
-                  >
-                    <div style={{ flex: 1 }}>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                        <span style={{ fontWeight: 700, color: 'var(--text-main)' }}>{p.brand} {p.model_name}</span>
-                      </div>
-                      <div style={{ marginTop: '4px' }}>
-                        {Array.isArray(p.specs) && p.specs.map((specObj, idx) => {
-                          const k = Object.keys(specObj)[0];
-                          return (
-                            <span key={idx} className="spec-chip" style={{ fontSize: '10px' }}>
-                              {k}: {specObj[k]}
-                            </span>
-                          );
-                        })}
-                      </div>
+              return (
+                <div
+                  key={p.id}
+                  style={{
+                    background: 'var(--bg-secondary)',
+                    border: '1px solid var(--border-color)',
+                    borderRadius: '8px',
+                    padding: '12px',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    justify: 'space-between',
+                    transition: 'transform 0.15s ease'
+                  }}
+                >
+                  <div>
+                    <div style={{ fontSize: '10px', textTransform: 'uppercase', color: 'var(--text-muted)', fontWeight: 700 }}>
+                      {categories.find(c => String(c.id) === String(p.category_id))?.name || 'Component'}
                     </div>
+                    <div style={{ fontSize: '13px', fontWeight: 800, color: 'var(--text-main)', marginTop: '2px', lineHeight: 1.3 }}>
+                      {p.brand} {p.model_name}
+                    </div>
+                    {p.warranty && (
+                      <div style={{ fontSize: '10px', color: 'var(--text-muted)', marginTop: '2px' }}>
+                        {p.warranty} Warranty
+                      </div>
+                    )}
+                  </div>
 
-                    <div style={{ textAlign: 'right' }}>
-                      <div style={{ fontSize: '14px', fontWeight: 700, color: '#10b981' }} className="price-display">
+                  <div style={{ marginTop: '12px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <div>
+                      <div style={{ fontSize: '14px', fontWeight: 800, color: 'var(--primary)' }} className="price-display">
                         ₹{priceAfterGst.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
                       </div>
-                      <div style={{ fontSize: '10px', color: 'var(--text-muted)' }}>Incl. {gstRate}% GST</div>
+                      <div style={{ fontSize: '10px', color: 'var(--text-muted)' }}>Incl. {gstPercent}% GST</div>
                     </div>
-
                     <button
                       className="btn btn-primary btn-sm"
-                      onClick={() => handleAddItem(p)}
+                      onClick={() => handleAddComponent(p)}
+                      title="Add to quotation build"
+                      style={{ padding: '6px 10px' }}
                     >
                       <Plus size={14} /> Add
                     </button>
                   </div>
-                );
-              })
+                </div>
+              );
+            })}
+            {filteredProducts.length === 0 && (
+              <div style={{ gridColumn: '1 / -1', textAlign: 'center', padding: '40px', color: 'var(--text-muted)' }}>
+                No products found matching your search.
+              </div>
             )}
           </div>
         </div>
 
-        {/* Right Panel: Selected Components (Scrollable List) */}
-        <div className="card" style={{ minWidth: 0, overflow: 'hidden' }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
-            <h3 style={{ fontSize: '16px', fontWeight: 700, margin: 0 }}>
-              Selected Components ({items.length})
-            </h3>
-            {items.length > 0 && (
-              <span style={{ fontSize: '12px', color: 'var(--accent)', fontWeight: 600 }}>
-                Scrollable List
-              </span>
-            )}
-          </div>
+        {/* Right Column: Selected Build Items List */}
+        <div className="card" style={{ display: 'flex', flexDirection: 'column' }}>
+          <h3 style={{ fontSize: '15px', fontWeight: 700, margin: 0, borderBottom: '1px solid var(--border-color)', paddingBottom: '10px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <span>Build Components ({items.length})</span>
+          </h3>
 
           {items.length === 0 ? (
-            <div style={{ textAlign: 'center', padding: '48px 16px', color: 'var(--text-muted)', fontSize: '13px' }}>
-              Your build is empty. Click <strong>"+ Add"</strong> on components from the left panel to populate this list.
+            <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', color: 'var(--text-muted)', padding: '30px', textAlign: 'center' }}>
+              <Plus size={36} strokeWidth={1} style={{ marginBottom: '8px', opacity: 0.5 }} />
+              <div>No components selected yet</div>
+              <div style={{ fontSize: '12px', marginTop: '4px' }}>Click <strong>+ Add</strong> on products from catalog</div>
             </div>
           ) : (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', maxHeight: '480px', overflowY: 'auto' }}>
-              {items.map((item) => {
-                const snap = item.product_snapshot || {};
+            <div style={{ flex: 1, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '8px', marginTop: '12px' }}>
+              {items.map((it, idx) => {
+                const snap = typeof it.product_snapshot === 'string' ? JSON.parse(it.product_snapshot) : (it.product_snapshot || {});
                 const basePrice = Number(snap.base_price) || 0;
                 const gstRate = Number(snap.gst_percent) || 18;
-                const unitPriceAfterGst = Number(snap.price_after_gst) || (basePrice + (basePrice * gstRate / 100));
-                const qty = Number(item.quantity) || 1;
-                const lineTotal = unitPriceAfterGst * qty;
+                const priceAfterGst = Number(snap.price_after_gst) || (basePrice + (basePrice * gstRate / 100));
 
                 return (
                   <div
-                    key={item.id}
+                    key={it.id || idx}
                     style={{
-                      background: 'var(--bg-input)',
+                      background: 'var(--bg-secondary)',
                       border: '1px solid var(--border-color)',
-                      borderRadius: '8px',
-                      padding: '12px 14px',
+                      borderRadius: '6px',
+                      padding: '10px',
                       display: 'flex',
                       alignItems: 'center',
-                      justifyContent: 'space-between',
-                      gap: '12px'
+                      justify: 'space-between'
                     }}
                   >
-                    <div style={{ flex: 1, minWidth: 0 }}>
-                      <div style={{ fontWeight: 700, fontSize: '14px', color: 'var(--text-main)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                        {snap.brand || 'Component'} {snap.model_name || ''}
+                    <div style={{ flex: 1, paddingRight: '8px' }}>
+                      <div style={{ fontSize: '12px', fontWeight: 800, color: 'var(--text-main)' }}>
+                        {snap.brand} {snap.model_name}
                       </div>
-                      <div style={{ fontSize: '12px', color: 'var(--text-muted)', marginTop: '2px' }}>
-                        ₹{unitPriceAfterGst.toLocaleString('en-IN', { minimumFractionDigits: 2 })} x {qty} (GST {gstRate}%)
-                      </div>
-                    </div>
-
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                      <button
-                        className="btn btn-secondary btn-sm"
-                        style={{ padding: '2px 8px' }}
-                        onClick={() => handleUpdateQty(item.id, qty - 1)}
-                      >
-                        -
-                      </button>
-                      <span style={{ fontWeight: 700, width: '24px', textAlign: 'center', fontSize: '14px' }}>{qty}</span>
-                      <button
-                        className="btn btn-secondary btn-sm"
-                        style={{ padding: '2px 8px' }}
-                        onClick={() => handleUpdateQty(item.id, qty + 1)}
-                      >
-                        +
-                      </button>
-                    </div>
-
-                    <div style={{ textAlign: 'right', minWidth: '95px' }}>
-                      <div style={{ fontWeight: 700, fontSize: '14px', color: '#10b981' }} className="price-display">
-                        ₹{lineTotal.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                      <div style={{ fontSize: '10px', color: 'var(--text-muted)', marginTop: '2px' }}>
+                        ₹{priceAfterGst.toLocaleString('en-IN', { minimumFractionDigits: 2 })} (Incl. {gstRate}% GST)
                       </div>
                     </div>
-
                     <button
-                      className="btn btn-danger btn-sm"
-                      style={{ padding: '6px' }}
-                      onClick={() => handleRemoveItem(item.id)}
-                      title="Remove component"
+                      className="btn btn-secondary btn-sm"
+                      style={{ padding: '4px 6px', color: 'var(--danger)' }}
+                      onClick={() => handleRemoveComponent(it.id)}
+                      title="Remove item"
                     >
                       <Trash2 size={14} />
                     </button>
@@ -483,13 +554,20 @@ export default function BuildQuotationPage({ categories = [], clients = [], acti
         <div className="bottom-dock-stats">
           <div className="bottom-stat-item">
             <span className="bottom-stat-label">Subtotal (Excl. GST)</span>
-            <span className="bottom-stat-val price-display">₹{subtotal.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</span>
+            <span className="bottom-stat-val price-display">₹{Math.round(subtotal).toLocaleString('en-IN')}</span>
           </div>
 
           <div className="bottom-stat-item">
             <span className="bottom-stat-label" style={{ color: 'var(--primary)' }}>Total GST</span>
             <span className="bottom-stat-val price-display" style={{ color: 'var(--primary)' }}>
-              ₹{totalGst.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+              ₹{Math.round(totalGst).toLocaleString('en-IN')}
+            </span>
+          </div>
+
+          <div className="bottom-stat-item">
+            <span className="bottom-stat-label">Round Off</span>
+            <span className="bottom-stat-val price-display" style={{ color: roundOff >= 0 ? '#10b981' : '#ef4444' }}>
+              {roundOff >= 0 ? '+' : ''}₹{Math.abs(roundOff).toLocaleString('en-IN')}
             </span>
           </div>
 
@@ -519,6 +597,24 @@ export default function BuildQuotationPage({ categories = [], clients = [], acti
             />
           </div>
 
+          {/* Seller Profit Margin Control */}
+          <div className="bottom-stat-item" style={{ minWidth: '130px' }}>
+            <span className="bottom-stat-label" style={{ color: '#f59e0b', display: 'flex', alignItems: 'center', gap: '4px' }}>
+              <Percent size={12} color="#f59e0b" /> Margin (₹)
+            </span>
+            <button
+              type="button"
+              className="btn btn-secondary btn-sm"
+              style={{ padding: '2px 8px', height: '28px', fontSize: '12px', borderColor: '#f59e0b', color: '#f59e0b', background: 'rgba(245, 158, 11, 0.08)' }}
+              onClick={() => {
+                setMarginSelectedItems(items.map(i => i.id));
+                setShowMarginModal(true);
+              }}
+            >
+              + Add Margin
+            </button>
+          </div>
+
           {gstBreakdown.length > 0 && (
             <button
               type="button"
@@ -536,7 +632,7 @@ export default function BuildQuotationPage({ categories = [], clients = [], acti
                 Grand Total (Incl. GST)
               </div>
               <div style={{ fontSize: '18px', fontWeight: 800 }} className="price-display">
-                ₹{grandTotal.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                ₹{Math.round(grandTotal).toLocaleString('en-IN')}
               </div>
             </div>
           </div>
@@ -553,6 +649,121 @@ export default function BuildQuotationPage({ categories = [], clients = [], acti
         </div>
       </div>
 
+      {/* Margin Distributor Modal */}
+      {showMarginModal && (
+        <div className="modal-overlay" onClick={() => setShowMarginModal(false)}>
+          <div className="modal-content" style={{ maxWidth: '520px' }} onClick={(e) => e.stopPropagation()}>
+            <div className="modal-header">
+              <h3 style={{ fontSize: '16px', fontWeight: 700, margin: 0, display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <Percent color="#f59e0b" size={18} /> Profit Margin Distributor (Seller Margin)
+              </h3>
+              <button className="btn btn-secondary btn-sm" onClick={() => setShowMarginModal(false)}>
+                Close
+              </button>
+            </div>
+
+            <div className="modal-body" style={{ display: 'flex', flexDirection: 'column', gap: '16px', marginTop: '12px' }}>
+              <div style={{ background: 'rgba(245, 158, 11, 0.1)', border: '1px solid rgba(245, 158, 11, 0.3)', borderRadius: '6px', padding: '10px 12px', fontSize: '12px', color: 'var(--text-main)', lineHeight: 1.4 }}>
+                ℹ️ <strong>Hidden on Customer Bills:</strong> Profit margin is bundled directly into component unit rates. It will <strong>NOT</strong> be displayed as a separate line item on customer PDF invoices.
+              </div>
+
+              <div className="form-group">
+                <label className="form-label" style={{ fontWeight: 700 }}>Total Seller Margin Amount (₹)</label>
+                <input
+                  type="number"
+                  min="0"
+                  step="100"
+                  className="form-input"
+                  placeholder="e.g. 5000"
+                  value={marginInput}
+                  onChange={(e) => setMarginInput(e.target.value)}
+                  autoFocus
+                />
+              </div>
+
+              <div className="form-group">
+                <label className="form-label" style={{ fontWeight: 700 }}>Margin Distribution Mode</label>
+                <div style={{ display: 'flex', gap: '16px', marginTop: '4px' }}>
+                  <label style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '13px', cursor: 'pointer' }}>
+                    <input
+                      type="radio"
+                      name="marginStrategy"
+                      value="all"
+                      checked={marginStrategy === 'all'}
+                      onChange={() => setMarginStrategy('all')}
+                    />
+                    Spread Equally to All Components ({items.length})
+                  </label>
+                  <label style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '13px', cursor: 'pointer' }}>
+                    <input
+                      type="radio"
+                      name="marginStrategy"
+                      value="selected"
+                      checked={marginStrategy === 'selected'}
+                      onChange={() => setMarginStrategy('selected')}
+                    />
+                    Selected Components Only
+                  </label>
+                </div>
+              </div>
+
+              {marginStrategy === 'selected' && (
+                <div className="form-group">
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
+                    <label className="form-label" style={{ fontWeight: 700, margin: 0 }}>Select Components ({marginSelectedItems.length}/{items.length}):</label>
+                    <button
+                      type="button"
+                      className="btn btn-secondary btn-sm"
+                      style={{ fontSize: '11px', padding: '2px 6px' }}
+                      onClick={() => setMarginSelectedItems(marginSelectedItems.length === items.length ? [] : items.map(i => i.id))}
+                    >
+                      {marginSelectedItems.length === items.length ? 'Deselect All' : 'Select All'}
+                    </button>
+                  </div>
+                  <div style={{ maxHeight: '180px', overflowY: 'auto', background: 'var(--bg-secondary)', border: '1px solid var(--border-color)', borderRadius: '6px', padding: '8px' }}>
+                    {items.map((it) => {
+                      const snap = typeof it.product_snapshot === 'string' ? JSON.parse(it.product_snapshot) : (it.product_snapshot || {});
+                      const isSelected = marginSelectedItems.includes(it.id);
+                      return (
+                        <label key={it.id} style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '4px 6px', fontSize: '12px', borderBottom: '1px solid var(--border-color)', cursor: 'pointer' }}>
+                          <input
+                            type="checkbox"
+                            checked={isSelected}
+                            onChange={(e) => {
+                              if (e.target.checked) setMarginSelectedItems([...marginSelectedItems, it.id]);
+                              else setMarginSelectedItems(marginSelectedItems.filter(id => id !== it.id));
+                            }}
+                          />
+                          <div style={{ flex: 1, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                            <strong>{snap.brand} {snap.model_name}</strong>
+                          </div>
+                          <div style={{ fontWeight: 700 }}>₹{(Number(snap.price_after_gst) || 0).toLocaleString('en-IN')}</div>
+                        </label>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+
+              {Number(marginInput) > 0 && items.length > 0 && (
+                <div style={{ fontSize: '12px', background: 'var(--bg-secondary)', padding: '8px 12px', borderRadius: '6px', color: '#f59e0b', fontWeight: 700 }}>
+                  Preview: +₹{(Number(marginInput) / (marginStrategy === 'selected' ? (marginSelectedItems.length || 1) : items.length)).toFixed(2)} added per target component
+                </div>
+              )}
+            </div>
+
+            <div className="modal-footer" style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px', marginTop: '16px' }}>
+              <button className="btn btn-secondary" onClick={() => setShowMarginModal(false)}>
+                Cancel
+              </button>
+              <button className="btn btn-primary" onClick={handleApplyMargin} disabled={savingMargin} style={{ background: '#f59e0b', borderColor: '#f59e0b', color: '#000000', fontWeight: 800 }}>
+                {savingMargin ? 'Applying...' : 'Apply Profit Margin'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* GST Breakdown Modal */}
       {showGstBreakdownModal && (
         <div className="modal-overlay" onClick={() => setShowGstBreakdownModal(false)}>
@@ -565,18 +776,18 @@ export default function BuildQuotationPage({ categories = [], clients = [], acti
                 Close
               </button>
             </div>
-            <div className="modal-body">
+            <div className="modal-body" style={{ marginTop: '12px' }}>
               <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '13px' }}>
                 <thead>
                   <tr style={{ borderBottom: '1px solid var(--border-color)', color: 'var(--text-muted)' }}>
-                    <th style={{ textAlign: 'left', padding: '6px 0' }}>GST Rate</th>
+                    <th style={{ textAlign: 'left', padding: '6px 0' }}>Rate</th>
                     <th style={{ textAlign: 'right', padding: '6px 0' }}>Taxable Base</th>
-                    <th style={{ textAlign: 'right', padding: '6px 0' }}>GST Amount</th>
+                    <th style={{ textAlign: 'right', padding: '6px 0' }}>GST Total</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {gstBreakdown.map((b, idx) => (
-                    <tr key={idx} style={{ borderBottom: '1px solid var(--border-color)' }}>
+                  {gstBreakdown.map((b) => (
+                    <tr key={b.rate} style={{ borderBottom: '1px solid var(--border-color)' }}>
                       <td style={{ padding: '8px 0', fontWeight: 700, color: 'var(--accent)' }}>GST @ {b.rate}%</td>
                       <td style={{ padding: '8px 0', textAlign: 'right' }} className="price-display">₹{b.taxable_amount.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</td>
                       <td style={{ padding: '8px 0', textAlign: 'right', color: '#10b981' }} className="price-display">₹{b.gst_amount.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</td>
@@ -596,6 +807,7 @@ export default function BuildQuotationPage({ categories = [], clients = [], acti
         quotation={currentQuotationData || { id: quotationId, build_name: buildName, discount, labour_charge: labourCharge, notes }}
         client={selectedClient}
         items={items}
+        categories={categories}
         settings={settingsData}
       />
 
@@ -608,8 +820,8 @@ export default function BuildQuotationPage({ categories = [], clients = [], acti
             setSelectedClientId(created.id);
             setShowClientModal(false);
             showToast(`Client "${created.name}" created`, 'success');
-          } catch (e) {
-            showToast('Failed to add client: ' + e.message, 'error');
+          } catch (err) {
+            showToast('Failed to create client: ' + err.message, 'error');
           }
         }}
       />

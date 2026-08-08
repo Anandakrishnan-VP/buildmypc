@@ -7,8 +7,8 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 function formatMoney(amount) {
-  const num = Number(amount) || 0;
-  return num.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  const num = Math.round(Number(amount) || 0);
+  return num.toLocaleString('en-IN');
 }
 
 function formatDate(dateStr) {
@@ -29,6 +29,19 @@ function renderTemplate(templateHtml, data) {
 
   let html = templateHtml;
 
+  const logoPath = path.join(__dirname, '../../buildguide/matrix-IT-world.png');
+  let logoBase64 = '';
+  if (fs.existsSync(logoPath)) {
+    logoBase64 = `data:image/png;base64,${fs.readFileSync(logoPath).toString('base64')}`;
+  }
+
+  if (logoBase64) {
+    html = html.replace(/\{\{#if settings\.logo_base64\}\}([\s\S]*?)\{\{\/if\}\}/g, '$1')
+      .replace(/\{\{settings\.logo_base64\}\}/g, logoBase64);
+  } else {
+    html = html.replace(/\{\{#if settings\.logo_base64\}\}[\s\S]*?\{\{\/if\}\}/g, '');
+  }
+
   // Simple string replacements
   html = html.replace(/\{\{settings\.name\}\}/g, settings.name || '');
   html = html.replace(/\{\{settings\.address\}\}/g, settings.address || '');
@@ -41,6 +54,35 @@ function renderTemplate(templateHtml, data) {
       .replace(/\{\{settings\.gstin\}\}/g, settings.gstin);
   } else {
     html = html.replace(/\{\{#if settings\.gstin\}\}[\s\S]*?\{\{\/if\}\}/g, '');
+  }
+
+
+  if (settings.bank_name) {
+    html = html.replace(/\{\{#if settings\.bank_name\}\}([\s\S]*?)\{\{else\}\}[\s\S]*?\{\{\/if\}\}/g, '$1')
+      .replace(/\{\{settings\.bank_name\}\}/g, settings.bank_name);
+  } else {
+    html = html.replace(/\{\{#if settings\.bank_name\}\}[\s\S]*?\{\{else\}\}([\s\S]*?)\{\{\/if\}\}/g, '$1');
+  }
+
+  if (settings.account_number) {
+    html = html.replace(/\{\{#if settings\.account_number\}\}([\s\S]*?)\{\{else\}\}[\s\S]*?\{\{\/if\}\}/g, '$1')
+      .replace(/\{\{settings\.account_number\}\}/g, settings.account_number);
+  } else {
+    html = html.replace(/\{\{#if settings\.account_number\}\}[\s\S]*?\{\{else\}\}([\s\S]*?)\{\{\/if\}\}/g, '$1');
+  }
+
+  if (settings.ifsc_code) {
+    html = html.replace(/\{\{#if settings\.ifsc_code\}\}([\s\S]*?)\{\{else\}\}[\s\S]*?\{\{\/if\}\}/g, '$1')
+      .replace(/\{\{settings\.ifsc_code\}\}/g, settings.ifsc_code);
+  } else {
+    html = html.replace(/\{\{#if settings\.ifsc_code\}\}[\s\S]*?\{\{else\}\}([\s\S]*?)\{\{\/if\}\}/g, '$1');
+  }
+
+  if (settings.branch_name) {
+    html = html.replace(/\{\{#if settings\.branch_name\}\}([\s\S]*?)\{\{else\}\}[\s\S]*?\{\{\/if\}\}/g, '$1')
+      .replace(/\{\{settings\.branch_name\}\}/g, settings.branch_name);
+  } else {
+    html = html.replace(/\{\{#if settings\.branch_name\}\}[\s\S]*?\{\{else\}\}([\s\S]*?)\{\{\/if\}\}/g, '$1');
   }
 
   html = html.replace(/\{\{quotation\.id\}\}/g, quotation.id || '');
@@ -106,9 +148,21 @@ function renderTemplate(templateHtml, data) {
         }
       }
 
+      const rawW = snapshot.warranty || item.warranty || '';
+      let wStr = '';
+      if (rawW) {
+        const s = String(rawW).trim();
+        if (/warranty/i.test(s)) wStr = s;
+        else if (/year|yr|month|mo/i.test(s)) wStr = `${s} Warranty`;
+        else {
+          const n = parseInt(s, 10);
+          wStr = !isNaN(n) ? `${n} ${n === 1 ? 'Year' : 'Years'} Warranty` : `${s} Warranty`;
+        }
+      }
+
       categoriesRowsHtml += `
         <tr>
-          <td><strong>${snapshot.brand || ''}</strong> ${snapshot.model_name || ''}</td>
+          <td><strong>${snapshot.brand || ''}</strong> ${snapshot.model_name || ''}${wStr ? ` (${wStr})` : ''}</td>
           <td>${specsHtml}</td>
           <td class="text-center">${item.calculated.quantity}</td>
           <td class="text-right">₹${formatMoney(item.calculated.line_base)}</td>
@@ -142,9 +196,42 @@ function renderTemplate(templateHtml, data) {
   }
   html = html.replace(/\{\{#each totals\.gst_breakdown\}\}[\s\S]*?\{\{\/each\}\}/, gstBreakdownRows);
 
-  // Totals
+function numberToIndianWords(amount) {
+  const num = Math.round(Number(amount) || 0);
+  if (num === 0) return 'INR Zero Rupees Only.';
+
+  const a = ['', 'One', 'Two', 'Three', 'Four', 'Five', 'Six', 'Seven', 'Eight', 'Nine', 'Ten', 'Eleven', 'Twelve', 'Thirteen', 'Fourteen', 'Fifteen', 'Sixteen', 'Seventeen', 'Eighteen', 'Nineteen'];
+  const b = ['', '', 'Twenty', 'Thirty', 'Forty', 'Fifty', 'Sixty', 'Seventy', 'Eighty', 'Ninety'];
+
+  function inWords(n) {
+    if (n < 20) return a[n];
+    if (n < 100) return b[Math.floor(n / 10)] + (n % 10 ? ' ' + a[n % 10] : '');
+    if (n < 1000) return a[Math.floor(n / 100)] + ' Hundred' + (n % 100 ? ' And ' + inWords(n % 100) : '');
+    if (n < 100000) return inWords(Math.floor(n / 1000)) + ' Thousand' + (n % 1000 ? ' ' + inWords(n % 1000) : '');
+    if (n < 10000000) return inWords(Math.floor(n / 100000)) + ' Lakh' + (n % 100000 ? ' ' + inWords(n % 100000) : '');
+    return inWords(Math.floor(n / 10000000)) + ' Crore' + (n % 10000000 ? ' ' + inWords(n % 10000000) : '');
+  }
+
+  return `INR ${inWords(num)} Rupees Only.`;
+}
+
+// Totals
+  const unroundedTotal = Math.max(0, (totals.subtotal || 0) - (totals.discount || 0) + (totals.total_gst || 0) + (totals.labour_charge || 0));
+  const roundedGrandTotal = Math.round(unroundedTotal / 50) * 50;
+  const roundOff = Math.round(roundedGrandTotal - unroundedTotal);
+  totals.grand_total = roundedGrandTotal;
+  const roundOffStr = (roundOff >= 0 ? '+' : '') + roundOff.toLocaleString('en-IN');
+
+  const cgst = (totals.total_gst || 0) / 2;
+  const sgst = (totals.total_gst || 0) / 2;
+  const grandTotalWords = numberToIndianWords(totals.grand_total);
+
+  html = html.replace(/\{\{totals\.round_off_str\}\}/g, roundOffStr);
   html = html.replace(/\{\{formatMoney totals\.subtotal\}\}/g, formatMoney(totals.subtotal));
   html = html.replace(/\{\{formatMoney totals\.total_gst\}\}/g, formatMoney(totals.total_gst));
+  html = html.replace(/\{\{formatMoney totals\.cgst\}\}/g, formatMoney(cgst));
+  html = html.replace(/\{\{formatMoney totals\.sgst\}\}/g, formatMoney(sgst));
+  html = html.replace(/\{\{totals\.grand_total_words\}\}/g, grandTotalWords);
 
   if (totals.discount > 0) {
     html = html.replace(/\{\{#if totals\.discount\}\}([\s\S]*?)\{\{\/if\}\}/g, '$1')
@@ -161,6 +248,7 @@ function renderTemplate(templateHtml, data) {
   }
 
   html = html.replace(/\{\{formatMoney totals\.grand_total\}\}/g, formatMoney(totals.grand_total));
+
 
   return html;
 }

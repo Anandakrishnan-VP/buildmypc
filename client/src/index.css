@@ -25,25 +25,68 @@
 }
 
 [data-theme="light"] {
-  --bg-dark: #f8fafc;
-  --bg-card: #ffffff;
-  --bg-card-hover: #f1f5f9;
-  --bg-input: #ffffff;
-  --border-color: #e2e8f0;
-  --border-accent: rgba(2, 132, 199, 0.3);
-  --text-main: #0f172a;
-  --text-muted: #64748b;
-  --primary: #0284c7;
-  --primary-hover: #0369a1;
-  --primary-light: rgba(2, 132, 199, 0.1);
-  --accent: #7c3aed;
-  --success: #059669;
-  --warning: #d97706;
-  --danger: #dc2626;
+  --bg-dark: #fffae6;           /* Pleasant soft pastel yellow background */
+  --bg-card: #ffffff;           /* Clean white floating cards */
+  --bg-card-hover: #fff5c5;     /* Soft warm yellow card hover */
+  --bg-input: #ffffff;          /* White input boxes */
+  --border-color: #fde047;      /* Gentle yellow border */
+  --border-accent: #FFCC06;     /* Matrix Yellow border accent */
+  --text-main: #0f172a;         /* Dark slate text */
+  --text-muted: #64748b;        /* Muted slate text */
+  --primary: #FFCC06;           /* Matrix Yellow brand color */
+  --primary-hover: #e6b800;     /* Rich gold hover */
+  --primary-light: #fef08a;     /* Soft yellow highlight tint */
+  --accent: #ca8a04;
+  --success: #10b981;
+  --warning: #f59e0b;
+  --danger: #ef4444;
   --radius: 8px;
-  --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.08);
-  --shadow-lg: 0 10px 25px rgba(0, 0, 0, 0.1);
-  --glow-primary: 0 0 15px rgba(2, 132, 199, 0.15);
+  --shadow-sm: 0 2px 6px rgba(250, 204, 21, 0.15);
+  --shadow-lg: 0 10px 25px rgba(234, 179, 8, 0.18);
+  --glow-primary: 0 0 15px rgba(255, 204, 6, 0.3);
+}
+
+[data-theme="light"] .sidebar {
+  background-color: #fffdf0;
+  border-right: 1px solid #fde047;
+}
+
+[data-theme="light"] .card {
+  background-color: #ffffff;
+  border: 1px solid #fde047;
+  box-shadow: 0 2px 8px rgba(234, 179, 8, 0.08);
+}
+
+[data-theme="light"] .nav-item button.active {
+  background-color: #FFCC06;
+  color: #000000;
+  border-color: #e6b800;
+  font-weight: 800;
+  box-shadow: 0 2px 8px rgba(255, 204, 6, 0.35);
+}
+
+[data-theme="light"] .nav-item button:hover {
+  background-color: #fef08a;
+  color: #000000;
+}
+
+[data-theme="light"] .btn-primary {
+  background-color: #FFCC06;
+  color: #000000;
+  border-color: #FFCC06;
+  font-weight: 800;
+}
+
+[data-theme="light"] .btn-primary:hover {
+  background-color: #e6b800;
+  color: #000000;
+}
+
+[data-theme="light"] .brand-title {
+  background: none;
+  -webkit-background-clip: unset;
+  -webkit-text-fill-color: initial;
+  color: #0f172a;
 }
 
 * {
@@ -457,6 +500,7 @@ html, body {
 }
 
 .badge-draft { background: rgba(142, 142, 160, 0.15); color: #a1a1aa; border: 1px solid rgba(142, 142, 160, 0.3); }
+.badge-confirmation_pending { background: rgba(245, 158, 11, 0.18); color: #d97706; border: 1px solid rgba(245, 158, 11, 0.4); }
 .badge-sent { background: rgba(0, 240, 255, 0.15); color: var(--primary); border: 1px solid var(--border-accent); }
 .badge-accepted { background: rgba(16, 185, 129, 0.15); color: #10b981; border: 1px solid rgba(16, 185, 129, 0.3); }
 .badge-rejected { background: rgba(255, 71, 87, 0.15); color: var(--danger); border: 1px solid rgba(255, 71, 87, 0.3); }
@@ -667,35 +711,80 @@ html, body {
   }
 }
 
-/* Print Styles for PDF Quotations */
+/* Print Styles for Multi-Page PDF Quotations (Hides Browser Header/Footer like Page Title & URL) */
+@page {
+  size: A4 portrait;
+  margin: 0 !important;
+}
+
 @media print {
-  body * {
-    visibility: hidden;
+  /* Completely hide main web app (#root) when printing the modal portal */
+  body > *:not(.modal-overlay) {
+    display: none !important;
   }
-  .printable-quotation-modal, #printable-quotation, #printable-quotation * {
-    visibility: visible;
+
+  html, body {
+    background: #ffffff !important;
+    color: #000000 !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    min-height: 0 !important;
+    height: auto !important;
+    overflow: visible !important;
   }
+
+  /* Reset modal containers to standard static document flow for multi-page pagination */
+  .modal-overlay,
   .printable-quotation-modal {
-    position: absolute;
-    left: 0;
-    top: 0;
+    position: static !important;
+    display: block !important;
+    left: auto !important;
+    top: auto !important;
     width: 100% !important;
     max-width: 100% !important;
     height: auto !important;
     max-height: none !important;
+    min-height: 0 !important;
     margin: 0 !important;
     padding: 0 !important;
     box-shadow: none !important;
+    border: none !important;
+    border-radius: 0 !important;
     background: #ffffff !important;
-    color: #000000 !important;
+    color: #0f172a !important;
+    overflow: visible !important;
   }
-  .modal-overlay {
-    background: none !important;
+
+  #printable-quotation {
     position: static !important;
+    display: block !important;
+    width: 100% !important;
+    max-width: 100% !important;
+    padding: 10mm !important;
+    box-sizing: border-box !important;
+    background: #ffffff !important;
+    color: #0f172a !important;
+    overflow: visible !important;
   }
+
   .no-print {
     display: none !important;
   }
+
+  /* Keep table rows intact across pages */
+  tr {
+    page-break-inside: avoid !important;
+    break-inside: avoid !important;
+  }
+
+  /* Prevent summary and totals block from splitting awkwardly across pages */
+  .summary-totals-block {
+    page-break-inside: avoid !important;
+    break-inside: avoid !important;
+    margin-top: 20px !important;
+  }
 }
+
+
 
 

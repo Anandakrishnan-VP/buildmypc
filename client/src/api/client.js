@@ -59,6 +59,10 @@ async function request(endpoint, options = {}) {
   }
 
   if (config.responseType === 'blob') {
+    const contentType = response.headers.get('content-type') || '';
+    if (!contentType.includes('application/pdf')) {
+      throw new Error('Response is not a valid PDF file stream');
+    }
     return await response.blob();
   }
 
@@ -374,6 +378,21 @@ export const api = {
     }
   },
 
+  getClient: async (id) => {
+    if (isSupabaseConfigured) {
+      try {
+        const { data, error } = await supabase.from('clients').select('*').eq('id', id).single();
+        if (!error && data) return data;
+      } catch (e) {}
+    }
+    try {
+      return await request(`/clients/${id}`);
+    } catch (e) {
+      const clients = getLS(LS_KEYS.CLIENTS, []);
+      return clients.find(c => String(c.id) === String(id)) || null;
+    }
+  },
+
   createClient: async (data) => {
     const formattedData = {
       id: data.id || `cli_${Date.now()}`,
@@ -437,65 +456,146 @@ export const api = {
 
   // Quotations
   getQuotations: async (params = {}) => {
+    let rawQuotes = [];
+    let clientsMap = {};
+
     if (isSupabaseConfigured) {
       try {
         const { data, error } = await supabase.from('quotations').select('*, items:quotation_items(*)').order('created_at', { ascending: false });
-        if (error) throw error;
-        if (data) {
-          return data.map(q => ({
-            ...q,
-            items: (q.items || []).map(it => ({
-              ...it,
-              product_snapshot: parseSnapshot(it.product_snapshot)
-            }))
-          }));
+        if (!error && data) rawQuotes = data;
+        
+        const { data: clientsData } = await supabase.from('clients').select('*');
+        if (clientsData) {
+          clientsData.forEach(c => { clientsMap[c.id] = c; });
         }
       } catch (err) {
         console.warn('Supabase getQuotations failed, falling back:', err.message);
       }
     }
-    try {
-      const queryStr = new URLSearchParams(params).toString();
-      return await request(`/quotations${queryStr ? `?${queryStr}` : ''}`);
-    } catch (e) {
-      return getLS(LS_KEYS.QUOTATIONS, []);
+
+    if (rawQuotes.length === 0) {
+      try {
+        const queryStr = new URLSearchParams(params).toString();
+        rawQuotes = await request(`/quotations${queryStr ? `?${queryStr}` : ''}`);
+      } catch (e) {
+        rawQuotes = getLS(LS_KEYS.QUOTATIONS, []);
+        const localClients = getLS(LS_KEYS.CLIENTS, []);
+        localClients.forEach(c => { clientsMap[c.id] = c; });
+      }
     }
+
+    return rawQuotes.map(q => {
+      const items = (q.items || []).map(it => ({
+        ...it,
+        product_snapshot: parseSnapshot(it.product_snapshot)
+      }));
+
+      let subtotal = 0;
+      let totalGst = 0;
+
+      items.forEach(it => {
+        const snap = it.product_snapshot || {};
+        const basePrice = Number(snap.base_price ?? it.base_price ?? it.unit_price ?? 0);
+        const gstRate = Number(snap.gst_percent ?? it.gst_percent ?? 18);
+        const qty = Number(it.quantity) || 1;
+
+        const lineBase = basePrice * qty;
+        const lineGst = lineBase * (gstRate / 100);
+
+        subtotal += lineBase;
+        totalGst += lineGst;
+      });
+
+      const discount = Number(q.discount) || 0;
+      const labour = Number(q.labour_charge) || 0;
+      const grandTotal = q.grand_total || Math.max(0, subtotal - discount + totalGst + labour);
+      const client = clientsMap[q.client_id] || {};
+
+      return {
+        ...q,
+        client_name: client.name || q.client_name || 'Valued Client',
+        client_phone: client.phone || q.client_phone || '',
+        item_count: items.length,
+        items,
+        subtotal: q.subtotal || subtotal,
+        total_gst: q.total_gst || totalGst,
+        grand_total: grandTotal
+      };
+    });
   },
 
   getQuotation: async (id) => {
+    let rawData = null;
+    let clientData = null;
+
     if (isSupabaseConfigured) {
       try {
         const { data, error } = await supabase.from('quotations').select('*, items:quotation_items(*)').eq('id', id).single();
-        if (error) throw error;
-        if (data) {
-          return {
-            quotation: data,
-            items: (data.items || []).map(it => ({
-              ...it,
-              product_snapshot: parseSnapshot(it.product_snapshot)
-            }))
-          };
+        if (!error && data) {
+          rawData = data;
+          if (data.client_id) {
+            const { data: c } = await supabase.from('clients').select('*').eq('id', data.client_id).single();
+            if (c) clientData = c;
+          }
         }
       } catch (err) {
         console.warn('Supabase getQuotation failed:', err.message);
       }
     }
-    try {
-      return await request(`/quotations/${id}`);
-    } catch (e) {
-      const quotes = getLS(LS_KEYS.QUOTATIONS, []);
-      const q = quotes.find(q => String(q.id) === String(id)) || null;
-      if (q) {
-        return {
-          quotation: q,
-          items: (q.items || []).map(it => ({
-            ...it,
-            product_snapshot: parseSnapshot(it.product_snapshot)
-          }))
-        };
+
+    if (!rawData) {
+      try {
+        rawData = await request(`/quotations/${id}`);
+        if (rawData && rawData.quotation) return rawData;
+      } catch (e) {
+        const quotes = getLS(LS_KEYS.QUOTATIONS, []);
+        const q = quotes.find(q => String(q.id) === String(id)) || null;
+        if (q) {
+          rawData = q;
+          const clients = getLS(LS_KEYS.CLIENTS, []);
+          clientData = clients.find(c => String(c.id) === String(q.client_id)) || null;
+        }
       }
-      return null;
     }
+
+    if (!rawData) return null;
+
+    const quotation = rawData.quotation || rawData;
+    const items = (rawData.items || quotation.items || []).map(it => ({
+      ...it,
+      product_snapshot: parseSnapshot(it.product_snapshot)
+    }));
+
+    let subtotal = 0;
+    let totalGst = 0;
+
+    items.forEach(it => {
+      const snap = it.product_snapshot || {};
+      const basePrice = Number(snap.base_price ?? it.base_price ?? it.unit_price ?? 0);
+      const gstRate = Number(snap.gst_percent ?? it.gst_percent ?? 18);
+      const qty = Number(it.quantity) || 1;
+
+      const lineBase = basePrice * qty;
+      const lineGst = lineBase * (gstRate / 100);
+
+      subtotal += lineBase;
+      totalGst += lineGst;
+    });
+
+    const discount = Number(quotation.discount) || 0;
+    const labour = Number(quotation.labour_charge) || 0;
+    const grandTotal = quotation.grand_total || Math.max(0, subtotal - discount + totalGst + labour);
+
+    return {
+      quotation: {
+        ...quotation,
+        subtotal,
+        total_gst: totalGst,
+        grand_total: grandTotal
+      },
+      client: clientData || rawData.client,
+      items
+    };
   },
 
   createQuotation: async (data) => {
@@ -671,7 +771,7 @@ export const api = {
 
   finalizeQuotation: async (id) => {
     if (isSupabaseConfigured) {
-      const { data: updated, error } = await supabase.from('quotations').update({ status: 'finalized' }).eq('id', id).select();
+      const { data: updated, error } = await supabase.from('quotations').update({ status: 'sent' }).eq('id', id).select();
       if (error) throw new Error(`Supabase Finalize Error: ${error.message}`);
       if (updated && updated[0]) return updated[0];
     }
@@ -681,7 +781,7 @@ export const api = {
       const quotes = getLS(LS_KEYS.QUOTATIONS, []);
       const quote = quotes.find(q => String(q.id) === String(id));
       if (quote) {
-        quote.status = 'finalized';
+        quote.status = 'sent';
         setLS(LS_KEYS.QUOTATIONS, quotes);
         return quote;
       }

@@ -120,6 +120,7 @@ export default function ClientsPage({ onNavigate, showToast = () => {}, showConf
                   <th>Contact Information</th>
                   <th>GSTIN</th>
                   <th>Address</th>
+                  <th>Date Added</th>
                   <th style={{ textAlign: 'right' }}>Actions</th>
                 </tr>
               </thead>
@@ -149,8 +150,11 @@ export default function ClientsPage({ onNavigate, showToast = () => {}, showConf
                         <span style={{ fontSize: '12px', color: 'var(--text-muted)' }}>Individual</span>
                       )}
                     </td>
-                    <td style={{ maxWidth: '240px', fontSize: '13px', color: 'var(--text-muted)' }}>
+                    <td style={{ maxWidth: '200px', fontSize: '13px', color: 'var(--text-muted)' }}>
                       {c.address || 'N/A'}
+                    </td>
+                    <td style={{ fontSize: '12px', color: 'var(--text-muted)', whiteSpace: 'nowrap', fontWeight: 600 }}>
+                      {c.created_at ? new Date(c.created_at).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) : 'N/A'}
                     </td>
                     <td style={{ textAlign: 'right' }}>
                       <div style={{ display: 'inline-flex', gap: '6px' }}>
@@ -190,10 +194,15 @@ export default function ClientsPage({ onNavigate, showToast = () => {}, showConf
       {selectedClientHistory && (
         <div className="modal-overlay" onClick={() => setSelectedClientHistory(null)}>
           <div className="modal-content" onClick={(e) => e.stopPropagation()}>
-            <div className="modal-header">
-              <h3 style={{ fontSize: '18px', fontWeight: 700, margin: 0 }}>
-                Quotation History — {selectedClientHistory.name}
-              </h3>
+            <div className="modal-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+              <div>
+                <h3 style={{ fontSize: '18px', fontWeight: 700, margin: 0 }}>
+                  Quotation History — {selectedClientHistory.name}
+                </h3>
+                <div style={{ fontSize: '12px', color: 'var(--text-muted)', marginTop: '4px' }}>
+                  Client added on: <strong>{selectedClientHistory.created_at ? new Date(selectedClientHistory.created_at).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) : 'N/A'}</strong>
+                </div>
+              </div>
               <button className="btn btn-secondary btn-sm" onClick={() => setSelectedClientHistory(null)}>
                 Close
               </button>

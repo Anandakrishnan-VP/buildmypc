@@ -8,10 +8,8 @@ export default function DashboardPage({
   onNavigate
 }) {
   const draftQuotes = quotations.filter((q) => q.status === 'draft');
-  const sentQuotes = quotations.filter((q) => q.status === 'sent' || q.status === 'accepted');
-  const totalEstimatedRevenue = quotations
-    .filter((q) => q.status === 'accepted' || q.status === 'sent')
-    .reduce((sum, q) => sum + (q.grand_total || 0), 0);
+  const closedDeals = quotations.filter((q) => q.status === 'accepted');
+  const totalAcceptedRevenue = closedDeals.reduce((sum, q) => sum + (q.grand_total || 0), 0);
 
   return (
     <div>
@@ -39,11 +37,11 @@ export default function DashboardPage({
 
         <div className="stat-card">
           <div className="stat-icon" style={{ background: 'rgba(56, 189, 248, 0.15)', color: '#38bdf8' }}>
-            <Users size={24} />
+            <CheckCircle2 size={24} />
           </div>
           <div>
-            <div className="stat-val">{clientsCount}</div>
-            <div className="stat-lbl">Registered Clients</div>
+            <div className="stat-val">{closedDeals.length}</div>
+            <div className="stat-lbl">Closed Deals</div>
           </div>
         </div>
 
@@ -62,7 +60,7 @@ export default function DashboardPage({
             <CheckCircle2 size={24} />
           </div>
           <div>
-            <div className="stat-val">₹{totalEstimatedRevenue.toLocaleString('en-IN', { maximumFractionDigits: 0 })}</div>
+            <div className="stat-val">₹{totalAcceptedRevenue.toLocaleString('en-IN', { maximumFractionDigits: 0 })}</div>
             <div className="stat-lbl">Pipeline Value</div>
           </div>
         </div>
@@ -102,7 +100,7 @@ export default function DashboardPage({
                       <td>{q.build_name || 'Custom PC Build'}</td>
                       <td>
                         <span className={`badge badge-${q.status}`}>
-                          {q.status}
+                          {(q.status || 'draft').replace(/_/g, ' ')}
                         </span>
                       </td>
                       <td style={{ fontWeight: 700 }} className="price-display">
