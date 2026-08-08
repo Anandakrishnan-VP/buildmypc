@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Plus, Trash2, Save, Download, UserPlus, Search, Receipt } from 'lucide-react';
 import { api } from '../api/client';
 import ClientFormModal from '../components/ClientFormModal';
+import PrintableQuotationModal from '../components/PrintableQuotationModal';
 
 export default function BuildQuotationPage({ categories = [], clients = [], activeQuoteId = null, onFinished, showToast = () => {}, showConfirm = () => {} }) {
   const [selectedClientId, setSelectedClientId] = useState('');
@@ -14,31 +15,45 @@ export default function BuildQuotationPage({ categories = [], clients = [], acti
   
   const [allProducts, setAllProducts] = useState([]);
   const [productSearch, setProductSearch] = useState('');
-  const [activeCategoryTab, setActiveCategoryTab] = useState(categories[0]?.id || 'cpu');
+  const [activeCategoryTab, setActiveCategoryTab] = useState(categories[0]?.id || 'cat_1');
   const [showClientModal, setShowClientModal] = useState(false);
   const [showGstBreakdownModal, setShowGstBreakdownModal] = useState(false);
+  const [showPrintModal, setShowPrintModal] = useState(false);
+  const [currentQuotationData, setCurrentQuotationData] = useState(null);
+  const [settingsData, setSettingsData] = useState({});
 
-  // Load products catalog for picker
+  // Load products catalog and shop settings
   useEffect(() => {
-    api.getProducts({ activeOnly: true }).then((data) => setAllProducts(data));
+    api.getProducts({ activeOnly: true }).then((data) => setAllProducts(data || []));
+    api.getSettings().then((s) => setSettingsData(s || {}));
   }, []);
+
+  // Update activeCategoryTab if categories change
+  useEffect(() => {
+    if (categories.length > 0 && !categories.find(c => c.id === activeCategoryTab)) {
+      setActiveCategoryTab(categories[0].id);
+    }
+  }, [categories]);
 
   // Load quote details if editing an existing quote/draft
   useEffect(() => {
     if (activeQuoteId) {
-      api.getQuotation(activeQuoteId).then((data) => {
-        setQuotationId(data.quotation.id);
-        setSelectedClientId(data.quotation.client_id);
-        setBuildName(data.quotation.build_name || '');
-        setDiscount(data.quotation.discount || 0);
-        setLabourCharge(data.quotation.labour_charge || 0);
-        setNotes(data.quotation.notes || '');
-        setItems(data.items || []);
+      api.getQuotation(activeQuoteId).then((res) => {
+        if (res && res.quotation) {
+          setQuotationId(res.quotation.id);
+          setSelectedClientId(res.quotation.client_id);
+          setBuildName(res.quotation.build_name || '');
+          setDiscount(res.quotation.discount || 0);
+          setLabourCharge(res.quotation.labour_charge || 0);
+          setNotes(res.quotation.notes || '');
+          setItems(res.items || []);
+          setCurrentQuotationData(res.quotation);
+        }
       }).catch((err) => {
         showToast('Failed to load quotation: ' + err.message, 'error');
       });
     } else {
-      if (clients.length > 0) {
+      if (clients.length > 0 && !selectedClientId) {
         setSelectedClientId(clients[0].id);
       }
     }
@@ -55,6 +70,7 @@ export default function BuildQuotationPage({ categories = [], clients = [], acti
       notes
     });
     setQuotationId(res.id);
+    setCurrentQuotationData(res);
     return res.id;
   };
 
@@ -65,9 +81,22 @@ export default function BuildQuotationPage({ categories = [], clients = [], acti
     }
     try {
       const qId = await ensureDraft(selectedClientId);
-      await api.addQuotationItem(qId, { product_id: product.id, quantity: 1 });
+      const basePrice = Number(product.base_price) || 0;
+      const gstRate = Number(product.gst_percent) || 18;
+      const priceAfterGst = Number(product.price_after_gst) || Math.round((basePrice + (basePrice * gstRate / 100)) * 100) / 100;
+
+      await api.addQuotationItem(qId, {
+        product_id: product.id,
+        product_snapshot: product,
+        quantity: 1,
+        line_total: priceAfterGst
+      });
+
       const updated = await api.getQuotation(qId);
-      setItems(updated.items);
+      if (updated) {
+        setItems(updated.items || []);
+        setCurrentQuotationData(updated.quotation);
+      }
       showToast(`Added "${product.brand} ${product.model_name}" to build`, 'success');
     } catch (err) {
       showToast('Failed to add item: ' + err.message, 'error');
@@ -79,7 +108,9 @@ export default function BuildQuotationPage({ categories = [], clients = [], acti
     try {
       await api.updateQuotationItem(quotationId, itemId, { quantity: newQty });
       const updated = await api.getQuotation(quotationId);
-      setItems(updated.items);
+      if (updated) {
+        setItems(updated.items || []);
+      }
     } catch (err) {
       showToast('Failed to update quantity: ' + err.message, 'error');
     }
@@ -89,7 +120,9 @@ export default function BuildQuotationPage({ categories = [], clients = [], acti
     try {
       await api.removeQuotationItem(quotationId, itemId);
       const updated = await api.getQuotation(quotationId);
-      setItems(updated.items);
+      if (updated) {
+        setItems(updated.items || []);
+      }
       showToast('Item removed from build', 'info');
     } catch (err) {
       showToast('Failed to remove item: ' + err.message, 'error');
@@ -136,29 +169,40 @@ export default function BuildQuotationPage({ categories = [], clients = [], acti
         notes
       });
       await api.finalizeQuotation(qId);
+      
+      const qData = await api.getQuotation(qId);
+      if (qData) {
+        setCurrentQuotationData(qData.quotation);
+        setItems(qData.items || []);
+      }
 
-      const blob = await api.getPdfBlob(qId);
-      const url = window.URL.createObjectURL(blob);
-      const link = document.createElement('a');
-      link.href = url;
-      link.download = `Quotation_${qId}.pdf`;
-      link.click();
-      window.URL.revokeObjectURL(url);
-
-      showToast(`Quotation ${qId} finalized & PDF downloaded!`, 'success');
-      if (onFinished) onFinished();
+      // Try server PDF download, or open client-side printable PDF modal
+      try {
+        const blob = await api.getPdfBlob(qId);
+        const url = window.URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        link.href = url;
+        link.download = `Quotation_${qId}.pdf`;
+        link.click();
+        window.URL.revokeObjectURL(url);
+        showToast(`Quotation ${qId} finalized & PDF downloaded!`, 'success');
+      } catch (e) {
+        // Express PDF endpoint unavailable -> open printable PDF modal
+        setShowPrintModal(true);
+        showToast(`Quotation ${qId} finalized! Opening printable PDF...`, 'success');
+      }
     } catch (err) {
-      showToast('PDF Generation failed: ' + err.message, 'error');
+      showToast('Failed to finalize quotation: ' + err.message, 'error');
     }
   };
 
   // Filter products by active category tab & search
   const filteredProducts = allProducts.filter((p) => {
-    const matchesCat = !activeCategoryTab || p.category_id === activeCategoryTab;
+    const matchesCat = !activeCategoryTab || String(p.category_id) === String(activeCategoryTab);
     const matchesSearch = !productSearch || 
       p.brand.toLowerCase().includes(productSearch.toLowerCase()) ||
       p.model_name.toLowerCase().includes(productSearch.toLowerCase()) ||
-      JSON.stringify(p.specs).toLowerCase().includes(productSearch.toLowerCase());
+      JSON.stringify(p.specs || []).toLowerCase().includes(productSearch.toLowerCase());
     return matchesCat && matchesSearch;
   });
 
@@ -168,20 +212,25 @@ export default function BuildQuotationPage({ categories = [], clients = [], acti
   const gstMap = {};
 
   items.forEach((item) => {
-    const snap = item.product_snapshot;
-    const lineBase = (snap.base_price || 0) * item.quantity;
-    const lineGst = lineBase * ((snap.gst_percent || 0) / 100);
+    const snap = item.product_snapshot || {};
+    const basePrice = Number(snap.base_price) || 0;
+    const gstRate = Number(snap.gst_percent) || 18;
+    const qty = Number(item.quantity) || 1;
+
+    const lineBase = basePrice * qty;
+    const lineGst = lineBase * (gstRate / 100);
+
     subtotal += lineBase;
     totalGst += lineGst;
 
-    const rate = snap.gst_percent || 0;
-    if (!gstMap[rate]) gstMap[rate] = { rate, taxable_amount: 0, gst_amount: 0 };
-    gstMap[rate].taxable_amount += lineBase;
-    gstMap[rate].gst_amount += lineGst;
+    if (!gstMap[gstRate]) gstMap[gstRate] = { rate: gstRate, taxable_amount: 0, gst_amount: 0 };
+    gstMap[gstRate].taxable_amount += lineBase;
+    gstMap[gstRate].gst_amount += lineGst;
   });
 
   const grandTotal = Math.max(0, subtotal - (Number(discount) || 0) + totalGst + (Number(labourCharge) || 0));
   const gstBreakdown = Object.values(gstMap).sort((a, b) => a.rate - b.rate);
+  const selectedClient = clients.find(c => String(c.id) === String(selectedClientId));
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', minHeight: '100%' }}>
@@ -255,7 +304,7 @@ export default function BuildQuotationPage({ categories = [], clients = [], acti
               <button
                 key={cat.id}
                 type="button"
-                className={`btn btn-sm ${activeCategoryTab === cat.id ? 'btn-primary' : 'btn-secondary'}`}
+                className={`btn btn-sm ${String(activeCategoryTab) === String(cat.id) ? 'btn-primary' : 'btn-secondary'}`}
                 style={{ whiteSpace: 'nowrap' }}
                 onClick={() => setActiveCategoryTab(cat.id)}
               >
@@ -270,7 +319,7 @@ export default function BuildQuotationPage({ categories = [], clients = [], acti
             <input
               type="text"
               className="form-input"
-              placeholder={`Search ${categories.find(c => c.id === activeCategoryTab)?.name || 'parts'}...`}
+              placeholder={`Search ${categories.find(c => String(c.id) === String(activeCategoryTab))?.name || 'parts'}...`}
               value={productSearch}
               onChange={(e) => setProductSearch(e.target.value)}
               style={{ paddingLeft: '36px' }}
@@ -284,52 +333,57 @@ export default function BuildQuotationPage({ categories = [], clients = [], acti
                 No parts found in this category.
               </div>
             ) : (
-              filteredProducts.map((p) => (
-                <div
-                  key={p.id}
-                  style={{
-                    background: 'var(--bg-input)',
-                    border: '1px solid var(--border-color)',
-                    borderRadius: '8px',
-                    padding: '12px 14px',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'space-between',
-                    gap: '12px'
-                  }}
-                >
-                  <div style={{ flex: 1 }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                      <span style={{ fontWeight: 700, color: 'var(--text-main)' }}>{p.brand} {p.model_name}</span>
-                      <span style={{ fontSize: '11px', color: 'var(--primary)', fontFamily: 'var(--font-mono)' }}>{p.id}</span>
-                    </div>
-                    <div style={{ marginTop: '4px' }}>
-                      {Array.isArray(p.specs) && p.specs.map((specObj, idx) => {
-                        const k = Object.keys(specObj)[0];
-                        return (
-                          <span key={idx} className="spec-chip" style={{ fontSize: '10px' }}>
-                            {k}: {specObj[k]}
-                          </span>
-                        );
-                      })}
-                    </div>
-                  </div>
+              filteredProducts.map((p) => {
+                const basePrice = Number(p.base_price) || 0;
+                const gstRate = Number(p.gst_percent) || 18;
+                const priceAfterGst = Number(p.price_after_gst) || Math.round((basePrice + (basePrice * gstRate / 100)) * 100) / 100;
 
-                  <div style={{ textAlign: 'right' }}>
-                    <div style={{ fontSize: '14px', fontWeight: 700, color: '#10b981' }} className="price-display">
-                      ₹{p.price_after_gst?.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
-                    </div>
-                    <div style={{ fontSize: '10px', color: 'var(--text-muted)' }}>Incl. {p.gst_percent}% GST</div>
-                  </div>
-
-                  <button
-                    className="btn btn-primary btn-sm"
-                    onClick={() => handleAddItem(p)}
+                return (
+                  <div
+                    key={p.id}
+                    style={{
+                      background: 'var(--bg-input)',
+                      border: '1px solid var(--border-color)',
+                      borderRadius: '8px',
+                      padding: '12px 14px',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'space-between',
+                      gap: '12px'
+                    }}
                   >
-                    <Plus size={14} /> Add
-                  </button>
-                </div>
-              ))
+                    <div style={{ flex: 1 }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                        <span style={{ fontWeight: 700, color: 'var(--text-main)' }}>{p.brand} {p.model_name}</span>
+                      </div>
+                      <div style={{ marginTop: '4px' }}>
+                        {Array.isArray(p.specs) && p.specs.map((specObj, idx) => {
+                          const k = Object.keys(specObj)[0];
+                          return (
+                            <span key={idx} className="spec-chip" style={{ fontSize: '10px' }}>
+                              {k}: {specObj[k]}
+                            </span>
+                          );
+                        })}
+                      </div>
+                    </div>
+
+                    <div style={{ textAlign: 'right' }}>
+                      <div style={{ fontSize: '14px', fontWeight: 700, color: '#10b981' }} className="price-display">
+                        ₹{priceAfterGst.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                      </div>
+                      <div style={{ fontSize: '10px', color: 'var(--text-muted)' }}>Incl. {gstRate}% GST</div>
+                    </div>
+
+                    <button
+                      className="btn btn-primary btn-sm"
+                      onClick={() => handleAddItem(p)}
+                    >
+                      <Plus size={14} /> Add
+                    </button>
+                  </div>
+                );
+              })
             )}
           </div>
         </div>
@@ -354,8 +408,13 @@ export default function BuildQuotationPage({ categories = [], clients = [], acti
           ) : (
             <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', maxHeight: '480px', overflowY: 'auto' }}>
               {items.map((item) => {
-                const snap = item.product_snapshot;
-                const lineTotal = (snap.price_after_gst || 0) * item.quantity;
+                const snap = item.product_snapshot || {};
+                const basePrice = Number(snap.base_price) || 0;
+                const gstRate = Number(snap.gst_percent) || 18;
+                const unitPriceAfterGst = Number(snap.price_after_gst) || (basePrice + (basePrice * gstRate / 100));
+                const qty = Number(item.quantity) || 1;
+                const lineTotal = unitPriceAfterGst * qty;
+
                 return (
                   <div
                     key={item.id}
@@ -372,10 +431,10 @@ export default function BuildQuotationPage({ categories = [], clients = [], acti
                   >
                     <div style={{ flex: 1, minWidth: 0 }}>
                       <div style={{ fontWeight: 700, fontSize: '14px', color: 'var(--text-main)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                        {snap.brand} {snap.model_name}
+                        {snap.brand || 'Component'} {snap.model_name || ''}
                       </div>
                       <div style={{ fontSize: '12px', color: 'var(--text-muted)', marginTop: '2px' }}>
-                        ₹{snap.price_after_gst?.toLocaleString('en-IN')} x {item.quantity} (GST {snap.gst_percent}%)
+                        ₹{unitPriceAfterGst.toLocaleString('en-IN', { minimumFractionDigits: 2 })} x {qty} (GST {gstRate}%)
                       </div>
                     </div>
 
@@ -383,15 +442,15 @@ export default function BuildQuotationPage({ categories = [], clients = [], acti
                       <button
                         className="btn btn-secondary btn-sm"
                         style={{ padding: '2px 8px' }}
-                        onClick={() => handleUpdateQty(item.id, item.quantity - 1)}
+                        onClick={() => handleUpdateQty(item.id, qty - 1)}
                       >
                         -
                       </button>
-                      <span style={{ fontWeight: 700, width: '24px', textAlign: 'center', fontSize: '14px' }}>{item.quantity}</span>
+                      <span style={{ fontWeight: 700, width: '24px', textAlign: 'center', fontSize: '14px' }}>{qty}</span>
                       <button
                         className="btn btn-secondary btn-sm"
                         style={{ padding: '2px 8px' }}
-                        onClick={() => handleUpdateQty(item.id, item.quantity + 1)}
+                        onClick={() => handleUpdateQty(item.id, qty + 1)}
                       >
                         +
                       </button>
@@ -489,7 +548,7 @@ export default function BuildQuotationPage({ categories = [], clients = [], acti
             <Save size={16} /> Save Draft
           </button>
           <button className="btn btn-primary" onClick={handleFinalizeAndDownloadPdf}>
-            <Download size={16} /> Finalize & Download PDF
+            <Download size={16} /> Finalize & Print PDF
           </button>
         </div>
       </div>
@@ -529,6 +588,16 @@ export default function BuildQuotationPage({ categories = [], clients = [], acti
           </div>
         </div>
       )}
+
+      {/* Printable PDF Quotation Invoice Modal */}
+      <PrintableQuotationModal
+        isOpen={showPrintModal}
+        onClose={() => setShowPrintModal(false)}
+        quotation={currentQuotationData || { id: quotationId, build_name: buildName, discount, labour_charge: labourCharge, notes }}
+        client={selectedClient}
+        items={items}
+        settings={settingsData}
+      />
 
       <ClientFormModal
         isOpen={showClientModal}

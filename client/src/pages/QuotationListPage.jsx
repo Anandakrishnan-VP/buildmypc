@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
-import { Search, Download, Copy, Edit3, Trash2, FileText } from 'lucide-react';
+import { Search, Download, Copy, Edit3, Trash2, FileText, Printer } from 'lucide-react';
 import { api } from '../api/client';
+import PrintableQuotationModal from '../components/PrintableQuotationModal';
 
 export default function QuotationListPage({ onEditQuote, onNavigate, showToast = () => {}, showConfirm = () => {} }) {
   const [quotations, setQuotations] = useState([]);
@@ -8,11 +9,17 @@ export default function QuotationListPage({ onEditQuote, onNavigate, showToast =
   const [statusFilter, setStatusFilter] = useState('');
   const [loading, setLoading] = useState(true);
 
+  const [printModalOpen, setPrintModalOpen] = useState(false);
+  const [activeQuoteData, setActiveQuoteData] = useState(null);
+  const [activeClientData, setActiveClientData] = useState(null);
+  const [activeQuoteItems, setActiveQuoteItems] = useState([]);
+  const [settingsData, setSettingsData] = useState({});
+
   const fetchQuotations = async () => {
     setLoading(true);
     try {
       const data = await api.getQuotations({ search, status: statusFilter });
-      setQuotations(data);
+      setQuotations(data || []);
     } catch (err) {
       showToast('Failed to load quotations: ' + err.message, 'error');
     } finally {
@@ -22,20 +29,39 @@ export default function QuotationListPage({ onEditQuote, onNavigate, showToast =
 
   useEffect(() => {
     fetchQuotations();
+    api.getSettings().then((s) => setSettingsData(s || {}));
   }, [search, statusFilter]);
 
   const handleDownloadPdf = async (id) => {
     try {
-      const blob = await api.getPdfBlob(id);
-      const url = window.URL.createObjectURL(blob);
-      const link = document.createElement('a');
-      link.href = url;
-      link.download = `Quotation_${id}.pdf`;
-      link.click();
-      window.URL.revokeObjectURL(url);
-      showToast(`Downloading PDF for quotation ${id}`, 'success');
+      // Load full quote and client data for printing
+      const fullQuote = await api.getQuotation(id);
+      if (fullQuote) {
+        setActiveQuoteData(fullQuote.quotation);
+        setActiveQuoteItems(fullQuote.items || []);
+        if (fullQuote.quotation && fullQuote.quotation.client_id) {
+          const clientData = await api.getClient(fullQuote.quotation.client_id).catch(() => null);
+          setActiveClientData(clientData);
+        }
+      }
+
+      // Try server PDF download first
+      try {
+        const blob = await api.getPdfBlob(id);
+        const url = window.URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        link.href = url;
+        link.download = `Quotation_${id}.pdf`;
+        link.click();
+        window.URL.revokeObjectURL(url);
+        showToast(`Downloaded PDF for quotation ${id}`, 'success');
+      } catch (e) {
+        // Express PDF endpoint unavailable -> open printable PDF modal
+        setPrintModalOpen(true);
+        showToast(`Opening printable PDF for quotation ${id}...`, 'info');
+      }
     } catch (err) {
-      showToast('PDF generation failed: ' + err.message, 'error');
+      showToast('Failed to load quotation: ' + err.message, 'error');
     }
   };
 
@@ -153,15 +179,15 @@ export default function QuotationListPage({ onEditQuote, onNavigate, showToast =
                       <div style={{ fontWeight: 600 }}>{q.build_name || 'Custom PC Build'}</div>
                     </td>
                     <td style={{ fontSize: '13px', color: 'var(--text-muted)' }}>
-                      {new Date(q.created_at).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}
+                      {new Date(q.created_at || Date.now()).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}
                     </td>
                     <td>
-                      <span className="spec-chip">{q.item_count} parts</span>
+                      <span className="spec-chip">{q.items ? q.items.length : (q.item_count || 0)} parts</span>
                     </td>
                     <td>
                       <select
                         className={`badge badge-${q.status}`}
-                        value={q.status}
+                        value={q.status || 'draft'}
                         onChange={(e) => handleStatusChange(q.id, e.target.value)}
                         style={{ border: 'none', background: 'transparent', cursor: 'pointer' }}
                       >
@@ -172,7 +198,7 @@ export default function QuotationListPage({ onEditQuote, onNavigate, showToast =
                       </select>
                     </td>
                     <td style={{ fontWeight: 700, color: '#10b981' }} className="price-display">
-                      ₹{q.grand_total?.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                      ₹{q.grand_total ? q.grand_total.toLocaleString('en-IN', { minimumFractionDigits: 2 }) : '0.00'}
                     </td>
                     <td style={{ textAlign: 'right' }}>
                       <div style={{ display: 'inline-flex', gap: '6px' }}>
@@ -213,6 +239,16 @@ export default function QuotationListPage({ onEditQuote, onNavigate, showToast =
           </div>
         )}
       </div>
+
+      {/* Printable Quotation Modal */}
+      <PrintableQuotationModal
+        isOpen={printModalOpen}
+        onClose={() => setPrintModalOpen(false)}
+        quotation={activeQuoteData}
+        client={activeClientData}
+        items={activeQuoteItems}
+        settings={settingsData}
+      />
     </div>
   );
 }

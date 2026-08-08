@@ -667,3 +667,35 @@ html, body {
   }
 }
 
+/* Print Styles for PDF Quotations */
+@media print {
+  body * {
+    visibility: hidden;
+  }
+  .printable-quotation-modal, #printable-quotation, #printable-quotation * {
+    visibility: visible;
+  }
+  .printable-quotation-modal {
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 100% !important;
+    max-width: 100% !important;
+    height: auto !important;
+    max-height: none !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    box-shadow: none !important;
+    background: #ffffff !important;
+    color: #000000 !important;
+  }
+  .modal-overlay {
+    background: none !important;
+    position: static !important;
+  }
+  .no-print {
+    display: none !important;
+  }
+}
+
+

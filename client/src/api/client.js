@@ -65,6 +65,18 @@ async function request(endpoint, options = {}) {
   return await response.json();
 }
 
+function parseSnapshot(snap) {
+  if (!snap) return {};
+  if (typeof snap === 'string') {
+    try {
+      return JSON.parse(snap);
+    } catch (e) {
+      return {};
+    }
+  }
+  return snap;
+}
+
 export const api = {
   // Categories
   getCategories: async () => {
@@ -72,7 +84,6 @@ export const api = {
       try {
         let { data, error } = await supabase.from('categories').select('*').order('sort_order', { ascending: true });
         if (error) throw error;
-        // Auto-seed preloaded categories if Supabase categories table is empty
         if (!data || data.length === 0) {
           const formattedDefaults = DEFAULT_CATEGORIES.map(c => ({
             id: String(c.id).startsWith('cat_') ? c.id : `cat_${c.id}`,
@@ -168,7 +179,6 @@ export const api = {
         const { data, error } = await query;
         if (error) throw error;
         if (data) {
-          // Parse json specs if stringified
           return data.map(p => ({
             ...p,
             specs: typeof p.specs === 'string' ? JSON.parse(p.specs || '[]') : (p.specs || [])
@@ -431,7 +441,15 @@ export const api = {
       try {
         const { data, error } = await supabase.from('quotations').select('*, items:quotation_items(*)').order('created_at', { ascending: false });
         if (error) throw error;
-        if (data) return data;
+        if (data) {
+          return data.map(q => ({
+            ...q,
+            items: (q.items || []).map(it => ({
+              ...it,
+              product_snapshot: parseSnapshot(it.product_snapshot)
+            }))
+          }));
+        }
       } catch (err) {
         console.warn('Supabase getQuotations failed, falling back:', err.message);
       }
@@ -449,7 +467,15 @@ export const api = {
       try {
         const { data, error } = await supabase.from('quotations').select('*, items:quotation_items(*)').eq('id', id).single();
         if (error) throw error;
-        if (data) return data;
+        if (data) {
+          return {
+            quotation: data,
+            items: (data.items || []).map(it => ({
+              ...it,
+              product_snapshot: parseSnapshot(it.product_snapshot)
+            }))
+          };
+        }
       } catch (err) {
         console.warn('Supabase getQuotation failed:', err.message);
       }
@@ -458,7 +484,17 @@ export const api = {
       return await request(`/quotations/${id}`);
     } catch (e) {
       const quotes = getLS(LS_KEYS.QUOTATIONS, []);
-      return quotes.find(q => String(q.id) === String(id)) || null;
+      const q = quotes.find(q => String(q.id) === String(id)) || null;
+      if (q) {
+        return {
+          quotation: q,
+          items: (q.items || []).map(it => ({
+            ...it,
+            product_snapshot: parseSnapshot(it.product_snapshot)
+          }))
+        };
+      }
+      return null;
     }
   },
 
@@ -527,19 +563,31 @@ export const api = {
   },
 
   addQuotationItem: async (id, data) => {
+    const snap = data.product_snapshot || {};
+    const basePrice = Number(snap.base_price) || 0;
+    const gstRate = Number(snap.gst_percent) || 18;
+    const priceAfterGst = Number(snap.price_after_gst) || (basePrice + (basePrice * gstRate / 100));
+    const qty = Number(data.quantity) || 1;
+    const calculatedLineTotal = Number(data.line_total) || (priceAfterGst * qty);
+
     const formattedData = {
-      id: data.id || `qitem_${Date.now()}`,
+      id: data.id || `qitem_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
       quotation_id: String(id),
       product_id: String(data.product_id),
-      product_snapshot: typeof data.product_snapshot === 'string' ? data.product_snapshot : JSON.stringify(data.product_snapshot || {}),
-      quantity: Number(data.quantity) || 1,
-      line_total: Number(data.line_total) || 0
+      product_snapshot: typeof data.product_snapshot === 'string' ? data.product_snapshot : JSON.stringify(snap),
+      quantity: qty,
+      line_total: calculatedLineTotal
     };
 
     if (isSupabaseConfigured) {
       const { data: inserted, error } = await supabase.from('quotation_items').insert([formattedData]).select();
       if (error) throw new Error(`Supabase Quotation Item Add Error: ${error.message}`);
-      if (inserted && inserted[0]) return inserted[0];
+      if (inserted && inserted[0]) {
+        return {
+          ...inserted[0],
+          product_snapshot: parseSnapshot(inserted[0].product_snapshot)
+        };
+      }
     }
 
     try {
@@ -549,9 +597,10 @@ export const api = {
       const quote = quotes.find(q => String(q.id) === String(id));
       if (quote) {
         if (!quote.items) quote.items = [];
-        quote.items.push(formattedData);
+        const newItem = { ...formattedData, product_snapshot: snap };
+        quote.items.push(newItem);
         setLS(LS_KEYS.QUOTATIONS, quotes);
-        return formattedData;
+        return newItem;
       }
       return formattedData;
     }
