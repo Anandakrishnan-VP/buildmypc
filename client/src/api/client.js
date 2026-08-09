@@ -917,25 +917,26 @@ export const api = {
 
   // Settings
   getSettings: async () => {
-    const localData = getLS(LS_KEYS.SETTINGS, null);
     if (isSupabaseConfigured) {
       try {
         const { data, error } = await supabase.from('shop_settings').select('*').eq('id', 'default').single();
         if (!error && data) {
-          const merged = { ...data, ...(localData || {}) };
-          return merged;
+          setLS(LS_KEYS.SETTINGS, data);
+          return data;
         }
       } catch (err) {
-        console.warn('Supabase getSettings failed:', err.message);
+        console.warn('Supabase getSettings failed, using fallback:', err.message);
       }
     }
     try {
       const res = await request('/settings');
-      const merged = { ...(res || {}), ...(localData || {}) };
-      return merged;
-    } catch (e) {
-      return localData || { shop_name: 'MATRIX IT WORLD', currency: '₹', tax_rate: 18 };
-    }
+      if (res && typeof res === 'object') {
+        setLS(LS_KEYS.SETTINGS, res);
+        return res;
+      }
+    } catch (e) {}
+
+    return getLS(LS_KEYS.SETTINGS, {});
   },
 
   updateSettings: async (data) => {
@@ -946,24 +947,24 @@ export const api = {
       try {
         const { data: updated, error } = await supabase.from('shop_settings').upsert(payload).select();
         if (!error && updated && updated[0]) {
-          const merged = { ...payload, ...updated[0] };
-          setLS(LS_KEYS.SETTINGS, merged);
-          return merged;
+          setLS(LS_KEYS.SETTINGS, updated[0]);
+          return updated[0];
         }
         if (error) {
-          console.warn('Supabase settings upsert failed (schema mismatch), saved to local storage:', error.message);
+          console.warn('Supabase settings upsert error:', error.message);
         }
       } catch (err) {
-        console.warn('Supabase settings update error, saved to local storage:', err.message);
+        console.warn('Supabase settings update exception:', err.message);
       }
     }
     try {
       const res = await request('/settings', { method: 'PUT', body: payload });
-      const merged = { ...payload, ...(res || {}) };
-      setLS(LS_KEYS.SETTINGS, merged);
-      return merged;
-    } catch (e) {
-      return payload;
-    }
+      if (res) {
+        setLS(LS_KEYS.SETTINGS, res);
+        return res;
+      }
+    } catch (e) {}
+
+    return payload;
   }
 };
