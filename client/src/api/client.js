@@ -872,22 +872,60 @@ export const api = {
 
   duplicateQuotation: async (id) => {
     try {
-      return await request(`/quotations/${id}/duplicate`, { method: 'POST' });
-    } catch (e) {
-      const quotes = getLS(LS_KEYS.QUOTATIONS, []);
-      const original = quotes.find(q => String(q.id) === String(id));
-      if (original) {
-        const dup = {
-          ...original,
-          id: `qtn_${Date.now()}`,
-          status: 'draft',
-          created_at: new Date().toISOString()
-        };
-        quotes.push(dup);
-        setLS(LS_KEYS.QUOTATIONS, quotes);
-        return dup;
+      const origData = await api.getQuotation(id);
+      if (!origData || !origData.quotation) {
+        throw new Error(`Original quotation ${id} not found.`);
       }
-      return null;
+
+      const origQuote = origData.quotation;
+      const origItems = origData.items || [];
+      const newQuoteId = `QTN-${new Date().getFullYear()}-${Math.floor(1000 + Math.random() * 9000)}`;
+
+      const newQuoteObj = {
+        id: newQuoteId,
+        client_id: String(origQuote.client_id || ''),
+        build_name: `${origQuote.build_name || 'Custom PC Build'} (Copy)`,
+        status: 'draft',
+        labour_charge: Number(origQuote.labour_charge) || 0,
+        discount: Number(origQuote.discount) || 0,
+        notes: origQuote.notes || '',
+        valid_until: origQuote.valid_until || null,
+        created_at: new Date().toISOString()
+      };
+
+      if (isSupabaseConfigured) {
+        try {
+          const { data: inserted, error } = await supabase.from('quotations').insert([newQuoteObj]).select();
+          if (!error && inserted && inserted[0]) {
+            if (origItems.length > 0) {
+              const formattedItems = origItems.map(it => ({
+                id: `qitem_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
+                quotation_id: newQuoteId,
+                product_id: String(it.product_id),
+                product_snapshot: typeof it.product_snapshot === 'string' ? it.product_snapshot : JSON.stringify(it.product_snapshot || {}),
+                quantity: Number(it.quantity) || 1,
+                line_total: Number(it.line_total) || 0
+              }));
+              await supabase.from('quotation_items').insert(formattedItems);
+            }
+            return { ...inserted[0], items: origItems };
+          }
+        } catch (err) {
+          console.warn('Supabase duplicateQuotation error, trying API fallback:', err.message);
+        }
+      }
+
+      try {
+        const res = await request(`/quotations/${id}/duplicate`, { method: 'POST' });
+        if (res && res.id) return res;
+      } catch (e) {}
+
+      const quotes = getLS(LS_KEYS.QUOTATIONS, []);
+      quotes.push(newQuoteObj);
+      setLS(LS_KEYS.QUOTATIONS, quotes);
+      return newQuoteObj;
+    } catch (err) {
+      throw new Error(`Failed to duplicate quotation: ${err.message}`);
     }
   },
 

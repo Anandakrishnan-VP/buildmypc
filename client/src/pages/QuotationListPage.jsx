@@ -70,7 +70,10 @@ export default function QuotationListPage({ onEditQuote, onNavigate, showToast =
   const handleDuplicate = async (id) => {
     try {
       const cloned = await api.duplicateQuotation(id);
-      showToast(`Quotation duplicated as ${cloned.id}!`, 'success');
+      if (!cloned || !cloned.id) {
+        throw new Error('No quotation returned from duplicate operation');
+      }
+      showToast(`Quotation duplicated successfully as ${cloned.id}!`, 'success');
       fetchQuotations();
     } catch (err) {
       showToast('Failed to duplicate quotation: ' + err.message, 'error');

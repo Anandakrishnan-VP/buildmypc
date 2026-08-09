@@ -232,6 +232,44 @@ router.put('/:id', async (req, res) => {
   }
 });
 
+// POST /api/quotations/:id/duplicate
+router.post('/:id/duplicate', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const db = await getDb();
+
+    const orig = await db.get('SELECT * FROM quotations WHERE id = ?', [id]);
+    if (!orig) {
+      return res.status(404).json({ error: 'Quotation not found' });
+    }
+
+    const newId = await generateQuotationId(db);
+    const buildName = orig.build_name ? `${orig.build_name} (Copy)` : 'Custom PC Build (Copy)';
+
+    await db.run(
+      `INSERT INTO quotations 
+      (id, client_id, build_name, status, labour_charge, discount, notes, valid_until)
+      VALUES (?, ?, ?, 'draft', ?, ?, ?, ?)`,
+      [newId, orig.client_id, buildName, orig.labour_charge || 0, orig.discount || 0, orig.notes || '', orig.valid_until || null]
+    );
+
+    const items = await db.all('SELECT * FROM quotation_items WHERE quotation_id = ?', [id]);
+    for (const item of items) {
+      const newItemId = `qitem_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`;
+      await db.run(
+        `INSERT INTO quotation_items (id, quotation_id, product_id, product_snapshot, quantity, line_total)
+         VALUES (?, ?, ?, ?, ?, ?)`,
+        [newItemId, newId, item.product_id, item.product_snapshot, item.quantity, item.line_total]
+      );
+    }
+
+    const created = await db.get('SELECT * FROM quotations WHERE id = ?', [newId]);
+    res.status(201).json(created);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // POST /api/quotations/:id/items (add line item)
 router.post('/:id/items', async (req, res) => {
   try {
