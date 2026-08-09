@@ -940,7 +940,28 @@ export const api = {
   },
 
   updateSettings: async (data) => {
-    const payload = { id: 'default', ...data, updated_at: new Date().toISOString() };
+    const payload = {
+      id: 'default',
+      name: data.name ?? '',
+      logo_url: data.logo_url ?? null,
+      address: data.address ?? '',
+      phone: data.phone ?? '',
+      email: data.email ?? '',
+      website: data.website ?? '',
+      gstin: data.gstin ?? '',
+      pan: data.pan ?? '',
+      bank_name: data.bank_name ?? '',
+      account_number: data.account_number ?? '',
+      ifsc_code: data.ifsc_code ?? '',
+      branch_name: data.branch_name ?? '',
+      terms_conditions: data.terms_conditions ?? '',
+      quotation_prefix: data.quotation_prefix ?? 'QTN',
+      consultant_name: data.consultant_name ?? '',
+      consultant_phone: data.consultant_phone ?? '',
+      validity_days: Number(data.validity_days) || 2,
+      updated_at: new Date().toISOString()
+    };
+
     setLS(LS_KEYS.SETTINGS, payload);
 
     if (isSupabaseConfigured) {
@@ -952,6 +973,14 @@ export const api = {
         }
         if (error) {
           console.warn('Supabase settings upsert error:', error.message);
+          // Omit branch_name if remote Supabase schema hasn't added it yet
+          const fallbackPayload = { ...payload };
+          delete fallbackPayload.branch_name;
+          const { data: retryUpdated, error: retryErr } = await supabase.from('shop_settings').upsert(fallbackPayload).select();
+          if (!retryErr && retryUpdated && retryUpdated[0]) {
+            setLS(LS_KEYS.SETTINGS, retryUpdated[0]);
+            return retryUpdated[0];
+          }
         }
       } catch (err) {
         console.warn('Supabase settings update exception:', err.message);
