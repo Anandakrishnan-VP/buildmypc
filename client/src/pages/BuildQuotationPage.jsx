@@ -242,14 +242,15 @@ export default function BuildQuotationPage({ categories = [], clients = [], acti
           ? JSON.parse(it.product_snapshot)
           : { ...(it.product_snapshot || {}) };
 
-        const currentPriceAfterGst = Number(snap.price_after_gst) || Number(it.unit_price) || 0;
         const gstRate = Number(snap.gst_percent) || 18;
+        const currentPriceAfterGst = Number(snap.price_after_gst) || Number(it.unit_price) || 0;
+        const currentBasePrice = Number(snap.base_price) || (currentPriceAfterGst / (1 + (gstRate / 100))) || 0;
 
-        const newPriceAfterGst = Math.round((currentPriceAfterGst + marginPerItem) * 100) / 100;
-        const newBasePrice = Math.round((newPriceAfterGst / (1 + (gstRate / 100))) * 100) / 100;
+        const newBasePrice = Math.round((currentBasePrice + marginPerItem) * 100) / 100;
+        const newPriceAfterGst = Math.round((newBasePrice * (1 + (gstRate / 100))) * 100) / 100;
 
-        snap.price_after_gst = newPriceAfterGst;
         snap.base_price = newBasePrice;
+        snap.price_after_gst = newPriceAfterGst;
 
         const updatedSnapStr = JSON.stringify(snap);
         const newQty = Number(it.quantity) || 1;
@@ -272,7 +273,7 @@ export default function BuildQuotationPage({ categories = [], clients = [], acti
       setItems(updatedItems);
       setShowMarginModal(false);
       setMarginInput('');
-      showToast(`Added ₹${amount.toLocaleString('en-IN')} seller profit margin (+₹${marginPerItem.toFixed(2)} per component)!`, 'success');
+      showToast(`Added ₹${amount.toLocaleString('en-IN')} seller profit margin (+₹${marginPerItem.toFixed(2)} to base price excl. GST per component)!`, 'success');
     } catch (err) {
       showToast('Failed to apply margin: ' + err.message, 'error');
     } finally {
@@ -807,7 +808,7 @@ export default function BuildQuotationPage({ categories = [], clients = [], acti
 
               {Number(marginInput) > 0 && items.length > 0 && (
                 <div style={{ fontSize: '12px', background: 'var(--bg-secondary)', padding: '8px 12px', borderRadius: '6px', color: '#f59e0b', fontWeight: 700 }}>
-                  Preview: +₹{(Number(marginInput) / (marginStrategy === 'selected' ? (marginSelectedItems.length || 1) : items.length)).toFixed(2)} added per target component
+                  Preview: +₹{(Number(marginInput) / (marginStrategy === 'selected' ? (marginSelectedItems.length || 1) : items.length)).toFixed(2)} added to base price (excl. GST) per target component
                 </div>
               )}
             </div>
