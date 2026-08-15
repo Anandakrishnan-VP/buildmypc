@@ -997,6 +997,7 @@ export const api = {
       consultant_name: data.consultant_name ?? '',
       consultant_phone: data.consultant_phone ?? '',
       validity_days: Number(data.validity_days) || 2,
+      enable_round_off: data.enable_round_off !== false,
       updated_at: new Date().toISOString()
     };
 

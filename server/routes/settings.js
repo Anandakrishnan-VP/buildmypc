@@ -28,7 +28,7 @@ router.put('/', async (req, res) => {
     const {
       name, logo_url, address, phone, email, website, gstin,
       consultant_name, consultant_phone, bank_name, account_number, ifsc_code, branch_name,
-      validity_days, default_gst_percent, terms_conditions, quotation_prefix
+      validity_days, default_gst_percent, terms_conditions, quotation_prefix, enable_round_off
     } = req.body;
     const db = await getDb();
 
@@ -51,6 +51,7 @@ router.put('/', async (req, res) => {
         default_gst_percent = ?,
         terms_conditions = ?,
         quotation_prefix = ?,
+        enable_round_off = ?,
         updated_at = datetime('now')
        WHERE id = 'default'`,
       [
@@ -70,7 +71,8 @@ router.put('/', async (req, res) => {
         validity_days !== undefined ? Number(validity_days) || 2 : 2,
         default_gst_percent !== undefined ? Number(default_gst_percent) || 18 : 18,
         terms_conditions !== undefined ? terms_conditions : '',
-        quotation_prefix !== undefined ? quotation_prefix.trim().toUpperCase() : 'QTN'
+        quotation_prefix !== undefined ? quotation_prefix.trim().toUpperCase() : 'QTN',
+        enable_round_off !== undefined ? (enable_round_off ? 1 : 0) : 1
       ]
     );
 

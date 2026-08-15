@@ -89,7 +89,7 @@ function resolveCategoryName(snap, item, categories = []) {
   return 'HARDWARE';
 }
 
-export default function PrintableQuotationModal({ isOpen, onClose, quotation, client, items = [], categories = [], settings = {} }) {
+export default function PrintableQuotationModal({ isOpen, onClose, quotation, client, items = [], categories = [], settings = {}, enableRoundOff: enableRoundOffProp }) {
   if (!isOpen || !quotation) return null;
 
   const [pdfFormat, setPdfFormat] = React.useState('detailed'); // 'detailed' | 'lumpSum'
@@ -143,9 +143,9 @@ export default function PrintableQuotationModal({ isOpen, onClose, quotation, cl
   const labour = Number(quotation.labour_charge) || 0;
   const rawGrandTotal = Math.max(0, subtotal - discount + totalGst + labour);
   
-  // Nearest ₹50 step round off (<=24 rounds down, >=25 rounds up)
-  const grandTotal = Math.round(rawGrandTotal / 50) * 50;
-  const roundOff = Math.round(grandTotal - rawGrandTotal);
+  const enableRoundOff = enableRoundOffProp !== undefined ? enableRoundOffProp : (settings.enable_round_off !== false);
+  const grandTotal = enableRoundOff ? (Math.round(rawGrandTotal / 50) * 50) : Math.round(rawGrandTotal);
+  const roundOff = enableRoundOff ? Math.round(grandTotal - rawGrandTotal) : 0;
   const totalInWords = numberToIndianWords(grandTotal);
 
   const cgst = totalGst / 2;
@@ -268,7 +268,7 @@ export default function PrintableQuotationModal({ isOpen, onClose, quotation, cl
                   {shopName}
                 </h1>
                 <div style={{ fontSize: '11px', color: '#334155', marginTop: '4px', maxWidth: '440px', lineHeight: 1.4, fontWeight: 500 }}>
-                  <div><strong>GSTIN {shopGstin}</strong> &nbsp; <strong>PAN {shopPan}</strong></div>
+                  <div><strong>GSTIN {shopGstin}</strong></div>
                   <div>{shopAddress}</div>
                   <div>Mobile <strong>{shopPhone}</strong></div>
                   <div>Email <strong>{shopEmail}</strong></div>
@@ -434,7 +434,7 @@ export default function PrintableQuotationModal({ isOpen, onClose, quotation, cl
                   <tr>
                     <td style={{ padding: '4px 0', color: '#475569', textAlign: 'right' }}>Round Off:</td>
                     <td style={{ padding: '4px 0 4px 12px', fontWeight: 700, textAlign: 'right' }}>
-                      {roundOff >= 0 ? '+' : ''}{formatNoDec(roundOff)}
+                      {!enableRoundOff ? '₹0' : `${roundOff >= 0 ? '+' : ''}${formatNoDec(roundOff)}`}
                     </td>
                   </tr>
                   <tr style={{ borderTop: '2px solid #0f172a', borderBottom: '2px solid #0f172a' }}>

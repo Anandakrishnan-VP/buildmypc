@@ -79,6 +79,7 @@ CREATE TABLE IF NOT EXISTS shop_settings (
   consultant_name TEXT DEFAULT 'Sales Team',
   consultant_phone TEXT DEFAULT '+91 9946678190',
   validity_days INTEGER DEFAULT 2,
+  enable_round_off BOOLEAN DEFAULT 1,
   updated_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 

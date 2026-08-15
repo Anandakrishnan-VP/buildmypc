@@ -23,6 +23,7 @@ export default function BuildQuotationPage({ categories = [], clients = [], acti
   const [showPrintModal, setShowPrintModal] = useState(false);
   const [currentQuotationData, setCurrentQuotationData] = useState(null);
   const [settingsData, setSettingsData] = useState({});
+  const [enableRoundOff, setEnableRoundOff] = useState(true);
 
   // Margin Distributor state
   const [showMarginModal, setShowMarginModal] = useState(false);
@@ -34,7 +35,12 @@ export default function BuildQuotationPage({ categories = [], clients = [], acti
   // Load products catalog and shop settings
   useEffect(() => {
     api.getProducts({ activeOnly: true }).then((data) => setAllProducts(data || []));
-    api.getSettings().then((s) => setSettingsData(s || {}));
+    api.getSettings().then((s) => {
+      if (s) {
+        setSettingsData(s);
+        setEnableRoundOff(s.enable_round_off !== false);
+      }
+    });
   }, []);
 
   // Update activeCategoryTab if categories change
@@ -338,8 +344,8 @@ export default function BuildQuotationPage({ categories = [], clients = [], acti
   });
 
   const rawGrandTotal = Math.max(0, subtotal - (Number(discount) || 0) + totalGst + (Number(labourCharge) || 0));
-  const grandTotal = Math.round(rawGrandTotal / 50) * 50;
-  const roundOff = Math.round(grandTotal - rawGrandTotal);
+  const grandTotal = enableRoundOff ? (Math.round(rawGrandTotal / 50) * 50) : Math.round(rawGrandTotal);
+  const roundOff = enableRoundOff ? Math.round(grandTotal - rawGrandTotal) : 0;
   const gstBreakdown = Object.values(gstMap).sort((a, b) => a.rate - b.rate);
   const selectedClient = clients.find(c => String(c.id) === String(selectedClientId));
 
@@ -600,10 +606,19 @@ export default function BuildQuotationPage({ categories = [], clients = [], acti
             </span>
           </div>
 
-          <div className="bottom-stat-item">
-            <span className="bottom-stat-label">Round Off</span>
-            <span className="bottom-stat-val price-display" style={{ color: roundOff >= 0 ? '#10b981' : '#ef4444' }}>
-              {roundOff >= 0 ? '+' : ''}₹{Math.abs(roundOff).toLocaleString('en-IN')}
+          <div className="bottom-stat-item" style={{ cursor: 'pointer' }} onClick={() => setEnableRoundOff(!enableRoundOff)} title="Click to toggle Round Off feature on/off">
+            <span className="bottom-stat-label" style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+              Round Off
+              <input
+                type="checkbox"
+                checked={enableRoundOff}
+                onChange={(e) => setEnableRoundOff(e.target.checked)}
+                onClick={(e) => e.stopPropagation()}
+                style={{ width: '13px', height: '13px', accentColor: 'var(--primary)', cursor: 'pointer' }}
+              />
+            </span>
+            <span className="bottom-stat-val price-display" style={{ color: !enableRoundOff ? 'var(--text-muted)' : (roundOff >= 0 ? '#10b981' : '#ef4444') }}>
+              {enableRoundOff ? `${roundOff >= 0 ? '+' : ''}₹${Math.abs(roundOff).toLocaleString('en-IN')}` : 'OFF'}
             </span>
           </div>
 
@@ -870,6 +885,7 @@ export default function BuildQuotationPage({ categories = [], clients = [], acti
         items={items}
         categories={categories}
         settings={settingsData}
+        enableRoundOff={enableRoundOff}
       />
 
       <ClientFormModal

@@ -95,6 +95,7 @@ CREATE TABLE IF NOT EXISTS shop_settings (
   consultant_name TEXT DEFAULT 'Sales Team',
   consultant_phone TEXT DEFAULT '+91 9946678190',
   validity_days INTEGER DEFAULT 2,
+  enable_round_off BOOLEAN DEFAULT true,
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
@@ -108,6 +109,7 @@ ALTER TABLE shop_settings ADD COLUMN IF NOT EXISTS branch_name TEXT DEFAULT 'KAR
 ALTER TABLE shop_settings ADD COLUMN IF NOT EXISTS consultant_name TEXT DEFAULT 'Sales Team';
 ALTER TABLE shop_settings ADD COLUMN IF NOT EXISTS consultant_phone TEXT DEFAULT '+91 9946678190';
 ALTER TABLE shop_settings ADD COLUMN IF NOT EXISTS validity_days INTEGER DEFAULT 2;
+ALTER TABLE shop_settings ADD COLUMN IF NOT EXISTS enable_round_off BOOLEAN DEFAULT true;
 
 -- Disable Row Level Security (RLS) or grant public access for easy multi-device API access
 ALTER TABLE categories DISABLE ROW LEVEL SECURITY;

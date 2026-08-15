@@ -20,7 +20,8 @@ export default function SettingsPage({ showToast = () => {}, onReplayIntro = () 
     validity_days: 2,
     default_gst_percent: 18,
     terms_conditions: '',
-    quotation_prefix: 'QTN'
+    quotation_prefix: 'QTN',
+    enable_round_off: true
   });
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -44,7 +45,8 @@ export default function SettingsPage({ showToast = () => {}, onReplayIntro = () 
         validity_days: data.validity_days ?? 2,
         default_gst_percent: data.default_gst_percent ?? 18,
         terms_conditions: data.terms_conditions ?? '',
-        quotation_prefix: data.quotation_prefix ?? 'QTN'
+        quotation_prefix: data.quotation_prefix ?? 'QTN',
+        enable_round_off: data.enable_round_off !== false
       });
       setLoading(false);
     }).catch((err) => {
@@ -251,6 +253,21 @@ export default function SettingsPage({ showToast = () => {}, onReplayIntro = () 
               />
               <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '4px' }}>
                 Automatically sets validity date (e.g. 2 days from quote creation date)
+              </div>
+            </div>
+
+            <div className="form-group" style={{ background: 'var(--bg-secondary)', padding: '12px 14px', borderRadius: '8px', border: '1px solid var(--border-color)' }}>
+              <label style={{ display: 'flex', alignItems: 'center', gap: '10px', cursor: 'pointer', fontWeight: 700, fontSize: '13px' }}>
+                <input
+                  type="checkbox"
+                  style={{ width: '16px', height: '16px', accentColor: 'var(--primary)', cursor: 'pointer' }}
+                  checked={settings.enable_round_off !== false}
+                  onChange={(e) => setSettings({ ...settings, enable_round_off: e.target.checked })}
+                />
+                Enable Round Off Feature (Nearest ₹50)
+              </label>
+              <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '4px', marginLeft: '26px' }}>
+                When enabled, grand totals round to nearest ₹50 step. When disabled, exact grand totals are rendered on PDFs.
               </div>
             </div>
 
